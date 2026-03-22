@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
+
+	"github.com/jacksonfernando/a-kit/internal/proto"
 )
 
 // Options holds the configuration for scaffolding a new project.
@@ -74,7 +76,28 @@ func Generate(opts Options) error {
 		}
 	}
 
+	// Generate the example module from the bundled proto
+	fmt.Println("\n📦 Generating example module from api/example.proto...")
+	if err := generateExampleModule(projectDir, opts.ModuleName); err != nil {
+		return fmt.Errorf("generating example module: %w", err)
+	}
+
 	return nil
+}
+
+// generateExampleModule parses the newly written api/example.proto and generates
+// all module files using the same code generator as `a-kit generate`.
+func generateExampleModule(projectDir, modulePath string) error {
+	protoPath := filepath.Join(projectDir, "api", "example.proto")
+	content, err := os.ReadFile(protoPath)
+	if err != nil {
+		return err
+	}
+	pf, err := proto.ParseProto(string(content))
+	if err != nil {
+		return err
+	}
+	return proto.GenerateModule(pf, "example", modulePath, projectDir)
 }
 
 func renderTemplate(tmplStr string, data templateData) (string, error) {
