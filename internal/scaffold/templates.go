@@ -438,12 +438,15 @@ var tmplExampleProto = `syntax = "proto3";
 package example;
 
 // ExampleService manages example resources.
+// RPCs without a modifier are exposed as HTTP endpoints (in example/).
+// RPCs marked "Internal" are domain-only (in internal/example/, no HTTP route).
 service ExampleService {
-  rpc CreateExample(CreateExampleRequest) returns (CreateExampleResponse);
-  rpc GetExample(GetExampleRequest) returns (GetExampleResponse);
-  rpc ListExample(ListExampleRequest) returns (ListExampleResponse);
-  rpc UpdateExample(UpdateExampleRequest) returns (UpdateExampleResponse);
-  rpc DeleteExample(DeleteExampleRequest) returns (DeleteExampleResponse);
+  rpc CreateExample(CreateExampleRequest)           returns (CreateExampleResponse);
+  rpc GetExample(GetExampleRequest)                 returns (GetExampleResponse);
+  rpc ListExample(ListExampleRequest)               returns (ListExampleResponse);
+  rpc UpdateExample(UpdateExampleRequest)           returns (UpdateExampleResponse);
+  rpc DeleteExample(DeleteExampleRequest)           returns (DeleteExampleResponse);
+  rpc RecalculateExample(RecalculateExampleRequest) returns (RecalculateExampleResponse) Internal;
 }
 
 message CreateExampleRequest {
@@ -494,6 +497,14 @@ message DeleteExampleRequest {
 }
 
 message DeleteExampleResponse {
+  bool success = 1;
+}
+
+message RecalculateExampleRequest {
+  string id = 1;
+}
+
+message RecalculateExampleResponse {
   bool success = 1;
 }
 `

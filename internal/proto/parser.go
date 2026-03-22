@@ -24,6 +24,7 @@ type RPCDef struct {
 	Name         string
 	RequestType  string
 	ResponseType string
+	Internal     bool // true when the RPC is marked with the Internal keyword
 }
 
 // MessageDef represents a proto message.
@@ -43,7 +44,7 @@ type FieldDef struct {
 var (
 	rePackage = regexp.MustCompile(`^package\s+([\w.]+)\s*;`)
 	reService = regexp.MustCompile(`^service\s+(\w+)\s*\{`)
-	reRPC     = regexp.MustCompile(`rpc\s+(\w+)\s*\(\s*(\w+)\s*\)\s+returns\s*\(\s*(\w+)\s*\)`)
+	reRPC     = regexp.MustCompile(`rpc\s+(\w+)\s*\(\s*(\w+)\s*\)\s+returns\s*\(\s*(\w+)\s*\)(\s+Internal)?`)
 	reMessage = regexp.MustCompile(`^message\s+(\w+)\s*\{`)
 	reField   = regexp.MustCompile(`^(repeated\s+|optional\s+)?(\w+)\s+(\w+)\s*=\s*(\d+)\s*;`)
 )
@@ -99,6 +100,7 @@ func ParseProto(content string) (*ProtoFile, error) {
 					Name:         m[1],
 					RequestType:  m[2],
 					ResponseType: m[3],
+					Internal:     strings.TrimSpace(m[4]) == "Internal",
 				})
 			}
 		}

@@ -11,12 +11,14 @@ import (
 
 // GeneratorData is passed into every code template.
 type GeneratorData struct {
-	ModuleName  string      // e.g. "example"
-	ModulePath  string      // Go module path, e.g. "github.com/user/my-service"
-	ServiceName string      // proto service name, e.g. "ExampleService"
-	PackageName string      // Go package name (lowercase, no hyphens)
-	RPCs        []RPCInfo   // one per RPC in the service
-	Messages    []MsgInfo   // all proto messages as Go struct info
+	ModuleName       string    // e.g. "example"
+	ModulePath       string    // Go module path, e.g. "github.com/user/my-service"
+	ServiceName      string    // proto service name, e.g. "ExampleService"
+	PackageName      string    // Go package name (lowercase, no hyphens)
+	DirPrefix        string    // "" for external, "internal/" for internal modules
+	ModuleImportPath string    // full import path for this module's interfaces, e.g. "github.com/user/my-service/example" or "github.com/user/my-service/internal/example"
+	RPCs             []RPCInfo // RPCs that belong to this data set
+	Messages         []MsgInfo // all proto messages as Go struct info
 }
 
 // RPCInfo carries all derived information about one RPC.
@@ -48,52 +50,86 @@ type FieldInfo struct {
 }
 
 // GenerateModule generates all Go files for a module inside projectDir.
+// RPCs without the Internal keyword go into <module>/ (with HTTP handler).
+// RPCs marked Internal go into internal/<module>/ (no HTTP handler).
 func GenerateModule(pf *ProtoFile, moduleName, modulePath, projectDir string) error {
 	if len(pf.Services) == 0 {
 		return fmt.Errorf("no service defined in proto file")
 	}
 
 	svc := pf.Services[0]
-	data := buildGeneratorData(pf, svc, moduleName, modulePath)
-
-	files := map[string]string{
-		filepath.Join("models", moduleName+"_dto.go"):                                 tmplModels,
-		filepath.Join(moduleName, "interface.go"):                                      tmplInterface,
-		filepath.Join(moduleName, "handler", "http", moduleName+"_handler.go"):         tmplHandler,
-		filepath.Join(moduleName, "service", moduleName+"_service.go"):                 tmplService,
-		filepath.Join(moduleName, "repository", "mysql", moduleName+"_repository.go"):  tmplRepository,
-		filepath.Join(moduleName, "_mock", moduleName+"_repository_mock.go"):           tmplMockRepo,
-		filepath.Join(moduleName, "_mock", moduleName+"_service_mock.go"):              tmplMockService,
-	}
+	external, internal := buildGeneratorDataPair(pf, svc, moduleName, modulePath)
 
 	funcMap := template.FuncMap{
-		"lower":  strings.ToLower,
-		"title":  strings.Title,
+		"lower":      strings.ToLower,
 		"lowerFirst": lowerFirst,
 	}
 
-	for relPath, tmplStr := range files {
-		fullPath := filepath.Join(projectDir, relPath)
-		if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
-			return fmt.Errorf("mkdir %s: %w", relPath, err)
-		}
-
-		tmpl, err := template.New(relPath).Funcs(funcMap).Parse(tmplStr)
-		if err != nil {
-			return fmt.Errorf("parsing template for %s: %w", relPath, err)
-		}
-
-		var buf bytes.Buffer
-		if err := tmpl.Execute(&buf, data); err != nil {
-			return fmt.Errorf("executing template for %s: %w", relPath, err)
-		}
-
-		if err := os.WriteFile(fullPath, buf.Bytes(), 0644); err != nil {
-			return fmt.Errorf("writing %s: %w", relPath, err)
-		}
-		fmt.Printf("  ✔ %s\n", relPath)
+	// Always generate models (shared by both external and internal).
+	// Use external data if available, otherwise internal.
+	modelData := external
+	if len(external.RPCs) == 0 {
+		modelData = internal
+	}
+	if err := writeFile(projectDir, filepath.Join("models", moduleName+"_dto.go"), tmplModels, modelData, funcMap); err != nil {
+		return err
 	}
 
+	// External module files
+	if len(external.RPCs) > 0 {
+		extFiles := map[string]string{
+			filepath.Join(moduleName, "interface.go"):                                     tmplInterface,
+			filepath.Join(moduleName, "handler", "http", moduleName+"_handler.go"):        tmplHandler,
+			filepath.Join(moduleName, "service", moduleName+"_service.go"):                tmplService,
+			filepath.Join(moduleName, "repository", "mysql", moduleName+"_repository.go"): tmplRepository,
+			filepath.Join(moduleName, "_mock", moduleName+"_repository_mock.go"):          tmplMockRepo,
+			filepath.Join(moduleName, "_mock", moduleName+"_service_mock.go"):             tmplMockService,
+		}
+		for relPath, tmplStr := range extFiles {
+			if err := writeFile(projectDir, relPath, tmplStr, external, funcMap); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Internal module files (no HTTP handler)
+	if len(internal.RPCs) > 0 {
+		intBase := filepath.Join("internal", moduleName)
+		intFiles := map[string]string{
+			filepath.Join(intBase, "interface.go"):                                     tmplInterface,
+			filepath.Join(intBase, "service", moduleName+"_service.go"):                tmplService,
+			filepath.Join(intBase, "repository", "mysql", moduleName+"_repository.go"): tmplRepository,
+			filepath.Join(intBase, "_mock", moduleName+"_repository_mock.go"):          tmplMockRepo,
+			filepath.Join(intBase, "_mock", moduleName+"_service_mock.go"):             tmplMockService,
+		}
+		for relPath, tmplStr := range intFiles {
+			if err := writeFile(projectDir, relPath, tmplStr, internal, funcMap); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// writeFile renders a template and writes the result to projectDir/relPath.
+func writeFile(projectDir, relPath, tmplStr string, data GeneratorData, funcMap template.FuncMap) error {
+	fullPath := filepath.Join(projectDir, relPath)
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", relPath, err)
+	}
+	tmpl, err := template.New(relPath).Funcs(funcMap).Parse(tmplStr)
+	if err != nil {
+		return fmt.Errorf("parsing template for %s: %w", relPath, err)
+	}
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return fmt.Errorf("executing template for %s: %w", relPath, err)
+	}
+	if err := os.WriteFile(fullPath, buf.Bytes(), 0644); err != nil {
+		return fmt.Errorf("writing %s: %w", relPath, err)
+	}
+	fmt.Printf("  ✔ %s\n", relPath)
 	return nil
 }
 
@@ -115,20 +151,51 @@ func ReadModuleName(projectDir string) (string, error) {
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-func buildGeneratorData(pf *ProtoFile, svc ServiceDef, moduleName, modulePath string) GeneratorData {
-	rpcs := make([]RPCInfo, 0, len(svc.RPCs))
+// buildGeneratorDataPair returns two GeneratorData values:
+// one for external RPCs (no Internal keyword) and one for Internal RPCs.
+func buildGeneratorDataPair(pf *ProtoFile, svc ServiceDef, moduleName, modulePath string) (external, internal GeneratorData) {
+	msgs := buildMessages(pf)
+
+	var extRPCs, intRPCs []RPCInfo
 	for _, r := range svc.RPCs {
 		method, path, hasID := inferRoute(r.Name, moduleName)
-		rpcs = append(rpcs, RPCInfo{
+		info := RPCInfo{
 			Name:         r.Name,
 			RequestType:  r.RequestType,
 			ResponseType: r.ResponseType,
 			HTTPMethod:   method,
 			HTTPPath:     path,
 			HasPathID:    hasID,
-		})
+		}
+		if r.Internal {
+			intRPCs = append(intRPCs, info)
+		} else {
+			extRPCs = append(extRPCs, info)
+		}
 	}
 
+	base := GeneratorData{
+		ModuleName:  moduleName,
+		ModulePath:  modulePath,
+		ServiceName: svc.Name,
+		PackageName: toPackageName(moduleName),
+		Messages:    msgs,
+	}
+
+	external = base
+	external.RPCs = extRPCs
+	external.DirPrefix = ""
+	external.ModuleImportPath = modulePath + "/" + toPackageName(moduleName)
+
+	internal = base
+	internal.RPCs = intRPCs
+	internal.DirPrefix = "internal/"
+	internal.ModuleImportPath = modulePath + "/internal/" + toPackageName(moduleName)
+
+	return external, internal
+}
+
+func buildMessages(pf *ProtoFile) []MsgInfo {
 	msgs := make([]MsgInfo, 0, len(pf.Messages))
 	for _, m := range pf.Messages {
 		isReq := strings.HasSuffix(m.Name, "Request")
@@ -152,15 +219,7 @@ func buildGeneratorData(pf *ProtoFile, svc ServiceDef, moduleName, modulePath st
 			IsRequest: isReq,
 		})
 	}
-
-	return GeneratorData{
-		ModuleName:  moduleName,
-		ModulePath:  modulePath,
-		ServiceName: svc.Name,
-		PackageName: toPackageName(moduleName),
-		RPCs:        rpcs,
-		Messages:    msgs,
-	}
+	return msgs
 }
 
 // inferRoute derives HTTP method, path, and whether there's a /:id segment.
@@ -295,7 +354,7 @@ var tmplHandler = `package http
 import (
 	"net/http"
 
-	"{{.ModulePath}}/{{.PackageName}}"
+	{{.PackageName}} "{{.ModuleImportPath}}"
 	"{{.ModulePath}}/global"
 	"{{.ModulePath}}/middlewares"
 	"{{.ModulePath}}/models"
@@ -356,7 +415,7 @@ import (
 	"context"
 	"fmt"
 
-	"{{.ModulePath}}/{{.PackageName}}"
+	{{.PackageName}} "{{.ModuleImportPath}}"
 	"{{.ModulePath}}/models"
 )
 
@@ -384,7 +443,7 @@ import (
 	"context"
 	"fmt"
 
-	"{{.ModulePath}}/{{.PackageName}}"
+	{{.PackageName}} "{{.ModuleImportPath}}"
 	"{{.ModulePath}}/models"
 
 	"gorm.io/gorm"
@@ -442,6 +501,7 @@ import (
 // Mock{{.ServiceName}} is a testify mock for {{.ServiceName}}Interface.
 type Mock{{.ServiceName}} struct {
 	mock.Mock
+}
 }
 {{range .RPCs}}
 func (m *Mock{{$.ServiceName}}) {{.Name}}(ctx context.Context, req *models.{{.RequestType}}) (*models.{{.ResponseType}}, error) {

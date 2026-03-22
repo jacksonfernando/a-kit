@@ -35,7 +35,7 @@ a-kit create my-service --module github.com/myorg/my-service
 
 ```
 my-service/
-├── main.go                          # Echo server + dependency wiring
+├── main.go
 ├── go.mod
 ├── .env.example
 ├── .gitignore
@@ -44,38 +44,27 @@ my-service/
 ├── Makefile
 │
 ├── api/
-│   └── example.proto                # ← source of truth for modules
+│   └── example.proto            # source of truth — edit this, then run a-kit generate
 │
-├── global/                          # shared config, errors, response types
-│   ├── configuration.go
-│   ├── errors.go
-│   └── global.go
+├── global/                      # shared config, errors, response types
+├── middlewares/                 # CORS + JWT validation
+├── models/                      # generated DTOs (from proto messages)
+├── utils/                       # common, token, validator
+├── mysql/                       # sqitch migration placeholders
 │
-├── middlewares/
-│   └── middleware.go                # CORS + JWT validation
+├── example/                     # generated from non-Internal RPCs
+│   ├── interface.go
+│   ├── handler/http/
+│   ├── service/
+│   ├── repository/mysql/
+│   └── _mock/
 │
-├── models/
-│   └── example_dto.go               # generated from api/example.proto
-│
-├── utils/
-│   ├── common/                      # uuid, helpers
-│   ├── token/                       # JWT generate/parse
-│   └── validator/                   # struct validation
-│
-├── mysql/                           # sqitch migration placeholders
-│   ├── sqitch.conf
-│   ├── sqitch.plan
-│   ├── deploy/
-│   ├── init/
-│   ├── revert/
-│   └── verify/
-│
-└── example/                         # generated from api/example.proto
-    ├── interface.go
-    ├── handler/http/
-    ├── service/
-    ├── repository/mysql/
-    └── _mock/
+└── internal/
+    └── example/                 # generated from Internal RPCs (no HTTP layer)
+        ├── interface.go
+        ├── service/
+        ├── repository/mysql/
+        └── _mock/
 ```
 
 After creation:
@@ -101,34 +90,18 @@ a-kit generate
 a-kit generate order
 ```
 
-**What gets generated per module**
-
-| File | Description |
-|------|-------------|
-| `<module>/interface.go` | Repository + service interfaces |
-| `<module>/handler/http/<module>_handler.go` | Echo HTTP handler with routes |
-| `<module>/service/<module>_service.go` | Service layer (calls repository) |
-| `<module>/repository/mysql/<module>_repository.go` | MySQL/GORM repository |
-| `<module>/_mock/<module>_repository_mock.go` | Testify mock for repository |
-| `<module>/_mock/<module>_service_mock.go` | Testify mock for service |
-| `models/<module>_dto.go` | Request/response structs |
-
-**HTTP method inference from RPC name**
-
-| RPC prefix | HTTP method | Route |
-|------------|-------------|-------|
-| `Create*` | `POST` | `/v1/<modules>` |
-| `List*` | `GET` | `/v1/<modules>` |
-| `Get*` | `GET` | `/v1/<modules>/:id` |
-| `Update*` | `PUT` | `/v1/<modules>/:id` |
-| `Delete*` | `DELETE` | `/v1/<modules>/:id` |
-| anything else | `POST` | `/v1/<rpc-name>` |
-
 ---
 
-## Adding a New Module
+## Proto File Syntax
 
-1. Create `api/<module>.proto` defining your service and messages:
+Each module has one proto file at `api/<module>.proto`.
+
+### RPC Modifiers
+
+| Modifier | Generated in | HTTP handler |
+|----------|-------------|--------------|
+| _(none)_ | `<module>/` | ✅ Yes |
+| `Internal` | `internal/<module>/` | ❌ No |
 
 ```protobuf
 syntax = "proto3";
@@ -136,62 +109,29 @@ syntax = "proto3";
 package order;
 
 service OrderService {
+  // Public — exposed as HTTP endpoints in order/
   rpc CreateOrder(CreateOrderRequest) returns (CreateOrderResponse);
   rpc GetOrder(GetOrderRequest)       returns (GetOrderResponse);
   rpc ListOrder(ListOrderRequest)     returns (ListOrderResponse);
-}
 
-message CreateOrderRequest {
-  string customer_id = 1;
-  double amount      = 2;
-}
-
-message CreateOrderResponse {
-  string id          = 1;
-  string customer_id = 2;
-  double amount      = 3;
-}
-
-message GetOrderRequest {
-  string id = 1;
-}
-
-message GetOrderResponse {
-  string id          = 1;
-  string customer_id = 2;
-  double amount      = 3;
-}
-
-message ListOrderRequest {
-  int32 page      = 1;
-  int32 page_size = 2;
-}
-
-message ListOrderResponse {
-  repeated GetOrderResponse items = 1;
-  int32 total                     = 2;
+  // Internal — domain logic only, placed in internal/order/, no HTTP route
+  rpc RecalculateInterest(RecalculateInterestRequest) returns (RecalculateInterestResponse) Internal;
+  rpc MarkOverdue(MarkOverdueRequest)                 returns (MarkOverdueResponse) Internal;
 }
 ```
 
-2. Generate the module:
+### HTTP Method Inference
 
-```bash
-a-kit generate order
-```
+| RPC name prefix | HTTP method | Route |
+|-----------------|-------------|-------|
+| `Create*` | `POST` | `/v1/<modules>` |
+| `List*` | `GET` | `/v1/<modules>` |
+| `Get*` | `GET` | `/v1/<modules>/:id` |
+| `Update*` | `PUT` | `/v1/<modules>/:id` |
+| `Delete*` | `DELETE` | `/v1/<modules>/:id` |
+| anything else | `POST` | `/v1/<rpc-name>` |
 
-3. Wire the module in `main.go`:
-
-```go
-orderRepo := orderRepository.NewOrderServiceMySQLRepository(mysqlDb)
-orderSvc  := orderService.NewOrderService(orderRepo)
-orderHTTPHandler.NewOrderServiceHandler(e, orderSvc, mw)
-```
-
-4. Implement the repository logic in `order/repository/mysql/order_repository.go`.
-
----
-
-## Proto Field Type Mapping
+### Proto → Go Type Mapping
 
 | Proto type | Go type |
 |------------|---------|
@@ -206,6 +146,103 @@ orderHTTPHandler.NewOrderServiceHandler(e, orderSvc, mw)
 | `bytes` | `[]byte` |
 | `repeated T` | `[]T` |
 | message type | `*MessageType` |
+
+---
+
+## Adding a New Module
+
+1. Create `api/<module>.proto`:
+
+```protobuf
+syntax = "proto3";
+
+package payment;
+
+service PaymentService {
+  rpc CreatePayment(CreatePaymentRequest)   returns (CreatePaymentResponse);
+  rpc GetPayment(GetPaymentRequest)         returns (GetPaymentResponse);
+
+  rpc ProcessRefund(ProcessRefundRequest)   returns (ProcessRefundResponse) Internal;
+}
+
+message CreatePaymentRequest {
+  string order_id = 1;
+  double amount   = 2;
+}
+
+message CreatePaymentResponse {
+  string id       = 1;
+  string order_id = 2;
+  double amount   = 3;
+}
+
+message GetPaymentRequest {
+  string id = 1;
+}
+
+message GetPaymentResponse {
+  string id       = 1;
+  string order_id = 2;
+  double amount   = 3;
+}
+
+message ProcessRefundRequest {
+  string payment_id = 1;
+  double amount     = 2;
+}
+
+message ProcessRefundResponse {
+  bool success = 1;
+}
+```
+
+2. Generate the module:
+
+```bash
+a-kit generate payment
+```
+
+3. Wire external routes in `main.go`:
+
+```go
+paymentRepo := paymentRepository.NewPaymentServiceMySQLRepository(mysqlDb)
+paymentSvc  := paymentService.NewPaymentService(paymentRepo)
+paymentHTTPHandler.NewPaymentServiceHandler(e, paymentSvc, mw)
+```
+
+4. To use internal domain logic from another module:
+
+```go
+import internalPayment "my-service/internal/payment"
+```
+
+5. Implement repository logic in `payment/repository/mysql/` and `internal/payment/repository/mysql/`.
+
+---
+
+## What Gets Generated per Module
+
+### External RPCs → `<module>/`
+
+| File | Description |
+|------|-------------|
+| `<module>/interface.go` | Repository + service interfaces |
+| `<module>/handler/http/<module>_handler.go` | Echo HTTP handler with routes |
+| `<module>/service/<module>_service.go` | Service layer |
+| `<module>/repository/mysql/<module>_repository.go` | MySQL/GORM repository stub |
+| `<module>/_mock/<module>_repository_mock.go` | Testify mock for repository |
+| `<module>/_mock/<module>_service_mock.go` | Testify mock for service |
+| `models/<module>_dto.go` | All request/response structs |
+
+### Internal RPCs → `internal/<module>/`
+
+| File | Description |
+|------|-------------|
+| `internal/<module>/interface.go` | Repository + service interfaces |
+| `internal/<module>/service/<module>_service.go` | Service layer |
+| `internal/<module>/repository/mysql/<module>_repository.go` | MySQL/GORM repository stub |
+| `internal/<module>/_mock/<module>_repository_mock.go` | Testify mock |
+| `internal/<module>/_mock/<module>_service_mock.go` | Testify mock |
 
 ---
 
