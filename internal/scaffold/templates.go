@@ -5,9 +5,8 @@ package scaffold
 // generator (same engine as `a-kit generate`) from api/example.proto.
 func projectFiles(data templateData) map[string]string {
 	return map[string]string{
-		"go.mod":             tmplGoMod,
-		"main.go":            tmplMainGo,
-		".env.example":       tmplEnvExample,
+		"go.mod":  tmplGoMod,
+		"main.go": tmplMainGo,
 		".gitignore":         tmplGitignore,
 		"Dockerfile":         tmplDockerfile,
 		"docker-compose.yml": tmplDockerCompose,
@@ -27,6 +26,11 @@ func projectFiles(data templateData) map[string]string {
 		"utils/common/uuid.go":        tmplUtilsUUID,
 		"utils/token/token.go":        tmplUtilsToken,
 		"utils/validator/validator.go": tmplUtilsValidator,
+		"utils/config/config.go":      tmplUtilsConfig,
+
+		// config files
+		"config.yaml":         tmplConfigYAML,
+		"config.json.example": tmplConfigJSON,
 
 		// mysql sqitch
 		"mysql/sqitch.conf": tmplSqitchConf,
@@ -48,7 +52,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/google/uuid v1.6.0
 	github.com/labstack/echo/v4 v4.13.3
-	github.com/spf13/viper v1.20.1
+	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/mysql v1.5.7
 	gorm.io/gorm v1.25.12
 )
@@ -61,7 +65,6 @@ var tmplMainGo = `package main
 import (
 	"fmt"
 	"net/http"
-	"os"
 
 	exampleHTTPHandler "{{.ModuleName}}/example/handler/http"
 	exampleRepository "{{.ModuleName}}/example/repository/mysql"
@@ -69,33 +72,17 @@ import (
 
 	"{{.ModuleName}}/global"
 	"{{.ModuleName}}/middlewares"
+	appconfig "{{.ModuleName}}/utils/config"
 
 	"github.com/labstack/echo/v4"
-	"github.com/spf13/viper"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
 
 func main() {
 	var configuration global.Configuration
-
-	viper.SetConfigFile(".env")
-	if err := viper.ReadInConfig(); err != nil {
-		fmt.Println("No .env file found, using environment variables")
-	}
-
-	viper.AutomaticEnv()
-	viper.SetDefault("host_port", getEnv("APP_PORT", "9000"))
-	viper.SetDefault("db_host", getEnv("DB_HOST", "localhost"))
-	viper.SetDefault("db_port", getEnv("DB_PORT", "3306"))
-	viper.SetDefault("db_name", getEnv("DB_NAME", "{{.PackageName}}"))
-	viper.SetDefault("db_user", getEnv("DB_USER", "root"))
-	viper.SetDefault("db_pass", getEnv("DB_PASSWORD", ""))
-	viper.SetDefault("private_jwt_access_token_secret", getEnv("JWT_SECRET", "default-secret-key"))
-	viper.SetDefault("private_jwt_refresh_token_secret", getEnv("JWT_REFRESH_SECRET", "default-refresh-secret-key"))
-
-	if err := viper.Unmarshal(&configuration); err != nil {
-		panic("Unable to decode configuration into struct")
+	if err := appconfig.Load(&configuration); err != nil {
+		panic(fmt.Sprintf("failed to load configuration: %v", err))
 	}
 
 	dsn := fmt.Sprintf(
@@ -126,13 +113,6 @@ func main() {
 
 	e.Logger.Fatal(e.Start(fmt.Sprintf(":%s", configuration.HostPort)))
 }
-
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
 `
 
 // ── .env.example ────────────────────────────────────────────────────────────
@@ -152,6 +132,8 @@ PRIVATE_JWT_REFRESH_TOKEN_SECRET=your-refresh-secret-key
 // ── .gitignore ───────────────────────────────────────────────────────────────
 
 var tmplGitignore = `.env
+config.yaml
+config.json
 *.exe
 *.out
 vendor/
@@ -290,16 +272,16 @@ go run main.go
 var tmplGlobalConfiguration = `package global
 
 type Configuration struct {
-	HostUrl                      string ` + "`" + `mapstructure:"host_url"` + "`" + `
-	HostPort                     string ` + "`" + `mapstructure:"host_port"` + "`" + `
-	DbHost                       string ` + "`" + `mapstructure:"db_host"` + "`" + `
-	DbName                       string ` + "`" + `mapstructure:"db_name"` + "`" + `
-	DbUser                       string ` + "`" + `mapstructure:"db_user"` + "`" + `
-	DbPass                       string ` + "`" + `mapstructure:"db_pass"` + "`" + `
-	DbPort                       string ` + "`" + `mapstructure:"db_port"` + "`" + `
-	TimeoutDuration              int    ` + "`" + `mapstructure:"timeout_duration"` + "`" + `
-	PrivateJWTAccessTokenSecret  string ` + "`" + `mapstructure:"private_jwt_access_token_secret"` + "`" + `
-	PrivateJWTRefreshTokenSecret string ` + "`" + `mapstructure:"private_jwt_refresh_token_secret"` + "`" + `
+	HostUrl                      string ` + "`" + `mapstructure:"host_url"          yaml:"host_url"                          json:"host_url"` + "`" + `
+	HostPort                     string ` + "`" + `mapstructure:"host_port"         yaml:"host_port"                         json:"host_port"` + "`" + `
+	DbHost                       string ` + "`" + `mapstructure:"db_host"           yaml:"db_host"                           json:"db_host"` + "`" + `
+	DbName                       string ` + "`" + `mapstructure:"db_name"           yaml:"db_name"                           json:"db_name"` + "`" + `
+	DbUser                       string ` + "`" + `mapstructure:"db_user"           yaml:"db_user"                           json:"db_user"` + "`" + `
+	DbPass                       string ` + "`" + `mapstructure:"db_pass"           yaml:"db_pass"                           json:"db_pass"` + "`" + `
+	DbPort                       string ` + "`" + `mapstructure:"db_port"           yaml:"db_port"                           json:"db_port"` + "`" + `
+	TimeoutDuration              int    ` + "`" + `mapstructure:"timeout_duration"  yaml:"timeout_duration"                  json:"timeout_duration"` + "`" + `
+	PrivateJWTAccessTokenSecret  string ` + "`" + `mapstructure:"private_jwt_access_token_secret"  yaml:"private_jwt_access_token_secret"  json:"private_jwt_access_token_secret"` + "`" + `
+	PrivateJWTRefreshTokenSecret string ` + "`" + `mapstructure:"private_jwt_refresh_token_secret" yaml:"private_jwt_refresh_token_secret" json:"private_jwt_refresh_token_secret"` + "`" + `
 }
 `
 
@@ -640,4 +622,111 @@ var tmplSqitchPlan = `%syntax-version=1.0.0
 %uri=https://github.com/yourusername/{{.ProjectName}}
 
 `
+
+// ── utils/config/config.go ──────────────────────────────────────────────────
+
+var tmplUtilsConfig = `package config
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
+
+// envPattern matches {{"{{VAR_NAME}}"}} and {{"{{VAR_NAME:default_value}}"}} placeholders.
+var envPattern = regexp.MustCompile(` + "`" + `\{\{([A-Z0-9_]+)(?::([^}]*))?\}\}` + "`" + `)
+
+// Load reads the config file specified by the APP_CONFIG environment variable
+// (defaults to "config.yaml") and unmarshals it into out.
+// Placeholders of the form {{"{{VAR_NAME}}"}} or {{"{{VAR_NAME:default}}"}} are replaced
+// with the corresponding environment variable value before parsing.
+func Load(out interface{}) error {
+	path := os.Getenv("APP_CONFIG")
+	if path == "" {
+		path = "config.yaml"
+	}
+	return LoadFile(path, out)
+}
+
+// LoadFile reads the file at path, substitutes env var placeholders, and
+// unmarshals the result into out. Supported extensions: .yaml, .yml, .json.
+func LoadFile(path string, out interface{}) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("config: read %q: %w", path, err)
+	}
+	substituted := substitute(string(data))
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".yaml", ".yml":
+		return yaml.Unmarshal([]byte(substituted), out)
+	case ".json":
+		return json.Unmarshal([]byte(substituted), out)
+	default:
+		return fmt.Errorf("config: unsupported file extension %q (use .yaml, .yml, or .json)", filepath.Ext(path))
+	}
+}
+
+// substitute replaces all {{"{{VAR}}"}} and {{"{{VAR:default}}"}} placeholders in s with
+// the value of the named environment variable, falling back to the default.
+func substitute(s string) string {
+	return envPattern.ReplaceAllStringFunc(s, func(match string) string {
+		groups := envPattern.FindStringSubmatch(match)
+		varName, defaultVal := groups[1], groups[2]
+		if val := os.Getenv(varName); val != "" {
+			return val
+		}
+		return defaultVal
+	})
+}
+`
+
+// ── config.yaml ─────────────────────────────────────────────────────────────
+// Committed to the repo — contains only {{VAR:default}} placeholders, no
+// plaintext secrets. Secrets always come from environment variables.
+
+var tmplConfigYAML = `# Application configuration
+# Syntax: {{"{{VAR_NAME}}"}} injects the environment variable VAR_NAME.
+#         {{"{{VAR_NAME:default}}"}} falls back to "default" when the variable is unset.
+# Override which file is loaded by setting APP_CONFIG (e.g. APP_CONFIG=config/prod.yaml).
+
+host_url: "{{"{{HOST_URL:http://localhost}}"}}"
+host_port: "{{"{{APP_PORT:9000}}"}}"
+
+db_host: "{{"{{DB_HOST:localhost}}"}}"
+db_port: "{{"{{DB_PORT:3306}}"}}"
+db_name: "{{"{{DB_NAME:"}}{{.PackageName}}{{"}}"}}"
+db_user: "{{"{{DB_USER:root}}"}}"
+db_pass: "{{"{{DB_PASSWORD}}"}}"
+
+timeout_duration: 30
+
+private_jwt_access_token_secret:  "{{"{{JWT_SECRET:change-me-in-production}}"}}"
+private_jwt_refresh_token_secret: "{{"{{JWT_REFRESH_SECRET:change-me-in-production}}"}}"
+`
+
+// ── config.json.example ──────────────────────────────────────────────────────
+// JSON alternative — copy to config.json and set APP_CONFIG=config.json to use.
+
+var tmplConfigJSON = `{
+  "_comment": "Syntax: {{"{{VAR_NAME}}"}} injects an env var. {{"{{VAR_NAME:default}}"}} provides a fallback.",
+  "_hint":    "Set APP_CONFIG=config.json (or any path) to switch config files.",
+
+  "host_url":  "{{"{{HOST_URL:http://localhost}}"}}", 
+  "host_port": "{{"{{APP_PORT:9000}}"}}", 
+
+  "db_host": "{{"{{DB_HOST:localhost}}"}}", 
+  "db_port": "{{"{{DB_PORT:3306}}"}}", 
+  "db_name": "{{"{{DB_NAME:"}}{{.PackageName}}{{"}}"}}", 
+  "db_user": "{{"{{DB_USER:root}}"}}", 
+  "db_pass": "{{"{{DB_PASSWORD}}"}}", 
+
+  "timeout_duration": 30,
+
+  "private_jwt_access_token_secret":  "{{"{{JWT_SECRET:change-me-in-production}}"}}", 
+  "private_jwt_refresh_token_secret": "{{"{{JWT_REFRESH_SECRET:change-me-in-production}}"}}"}}`
 
