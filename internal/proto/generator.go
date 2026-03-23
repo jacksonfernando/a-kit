@@ -57,6 +57,7 @@ type FieldInfo struct {
 	GoName      string // "UserID"
 	GoType      string // "string", "int32", "[]*SomeMsg", …
 	JSONTag     string // `json:"user_id"`
+	QueryTag    string // `query:"user_id"` — used by Echo to bind query string params
 	ValidateTag string // `validate:"required"` or `validate:"required,dive"` or ""
 	IsID        bool   // true if field is named "id"
 	Repeated    bool   // true if the field is a slice (repeated in proto)
@@ -248,6 +249,7 @@ func buildMessages(pf *ProtoFile) []MsgInfo {
 				GoName:    toPascalCase(f.Name),
 				GoType:    protoTypeToGo(f.Type, f.Repeated),
 				JSONTag:   f.Name,
+				QueryTag:  f.Name,
 				IsID:      f.Name == "id",
 				Repeated:  f.Repeated,
 			}
@@ -465,7 +467,7 @@ type Empty struct{}
 {{range .Messages}}
 type {{.Name}} struct {
 {{- range .Fields}}
-	{{.GoName}} {{.GoType}} ` + "`" + `json:"{{.JSONTag}}"{{if .ValidateTag}} validate:"{{.ValidateTag}}"{{end}}` + "`" + `
+	{{.GoName}} {{.GoType}} ` + "`" + `json:"{{.JSONTag}}" query:"{{.QueryTag}}"{{if .ValidateTag}} validate:"{{.ValidateTag}}"{{end}}` + "`" + `
 {{- end}}
 }
 {{end}}`
@@ -522,12 +524,10 @@ func New{{.ServiceName}}Handler(e *echo.Echo, svc {{.PackageName}}.{{.ServiceNam
 {{range .RPCs}}
 func (h *{{$.ServiceName}}Handler) {{.Name}}(c echo.Context) error {
 	var req models.{{.RequestType}}
-{{- if and .HasPathID .NeedsBody}}
+
+	// Bind query params (GET) or request body (POST/PUT/PATCH).
 	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, global.BadResponse{Code: http.StatusBadRequest, Message: "invalid request body"})
-	}
-	if err := validator.ValidateStruct(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, global.BadResponse{Code: http.StatusBadRequest, Message: err.Error()})
+		return c.JSON(http.StatusBadRequest, global.BadResponse{Code: http.StatusBadRequest, Message: "invalid request"})
 	}
 {{- range .PathParams}}
 {{- if .Nested}}
@@ -536,22 +536,7 @@ func (h *{{$.ServiceName}}Handler) {{.Name}}(c echo.Context) error {
 	req.{{.GoField}} = c.Param("{{.EchoParam}}")
 {{- end}}
 {{- end}}
-{{- else if .HasPathID}}
-{{- range .PathParams}}
-{{- if .Nested}}
-	// TODO: bind path param ":{{.EchoParam}}" to nested field {{.FieldPath}}
-{{- else}}
-	req.{{.GoField}} = c.Param("{{.EchoParam}}")
-{{- end}}
-{{- end}}
-{{- else if eq .HTTPMethod "GET"}}
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, global.BadResponse{Code: http.StatusBadRequest, Message: "invalid query params"})
-	}
-{{- else}}
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, global.BadResponse{Code: http.StatusBadRequest, Message: "invalid request body"})
-	}
+{{- if .NeedsBody}}
 	if err := validator.ValidateStruct(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, global.BadResponse{Code: http.StatusBadRequest, Message: err.Error()})
 	}
