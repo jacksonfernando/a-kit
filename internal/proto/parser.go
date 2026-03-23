@@ -1,6 +1,7 @@
 package proto
 
 import (
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -28,11 +29,11 @@ const (
 type HTTPMethod string
 
 const (
-	HTTPMethodGET    HTTPMethod = "GET"
-	HTTPMethodPOST   HTTPMethod = "POST"
-	HTTPMethodPUT    HTTPMethod = "PUT"
-	HTTPMethodPATCH  HTTPMethod = "PATCH"
-	HTTPMethodDELETE HTTPMethod = "DELETE"
+	HTTPMethodGET    HTTPMethod = http.MethodGet
+	HTTPMethodPOST   HTTPMethod = http.MethodPost
+	HTTPMethodPUT    HTTPMethod = http.MethodPut
+	HTTPMethodPATCH  HTTPMethod = http.MethodPatch
+	HTTPMethodDELETE HTTPMethod = http.MethodDelete
 )
 
 const protoTypeEmpty = "google.protobuf.Empty"
