@@ -417,102 +417,129 @@ func (gm *GoMiddleware) ValidateToken(next echo.HandlerFunc) echo.HandlerFunc {
 
 var tmplExampleProto = `syntax = "proto3";
 
-package example;
+package example.v1;
 
-// ExampleService manages example resources.
-//
-// Route annotations (optional — overrides name-based inference):
-//   rpc Foo(FooReq) returns (FooResp) GET  /path;
-//   rpc Foo(FooReq) returns (FooResp) POST /path/:id/action;
-//
-// Without an annotation the HTTP method and path are inferred from the RPC name:
-//   Create* → POST /examples          List*   → GET  /examples
-//   Get*    → GET  /examples/:id      Update* → PUT  /examples/:id
-//   Delete* → DELETE /examples/:id    other   → POST /<rpc-name>
-//
-// Mark an RPC "Internal" to generate it in internal/example/ with no HTTP handler.
+import "google/api/annotations.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/empty.proto";
+
+option go_package = "{{.ModuleName}}/api/example/v1;examplev1";
+
+// Example is the resource managed by ExampleService.
+message Example {
+  // Resource name, e.g. "examples/123".
+  string name        = 1;
+  string display_name = 2;
+  string description  = 3;
+}
+
+// ExampleService provides CRUD and custom operations on Example resources.
 service ExampleService {
-  rpc CreateExample(CreateExampleRequest)           returns (CreateExampleResponse);                      // POST   /examples
-  rpc GetExample(GetExampleRequest)                 returns (GetExampleResponse);                         // GET    /examples/:id
-  rpc ListExample(ListExampleRequest)               returns (ListExampleResponse);                        // GET    /examples
-  rpc UpdateExample(UpdateExampleRequest)           returns (UpdateExampleResponse);                      // PUT    /examples/:id
-  rpc DeleteExample(DeleteExampleRequest)           returns (DeleteExampleResponse);                      // DELETE /examples/:id
-  rpc SearchExample(SearchExampleRequest)           returns (SearchExampleResponse) GET /examples/search; // explicit GET /examples/search
-  rpc ApproveExample(ApproveExampleRequest)         returns (ApproveExampleResponse) POST /examples/:id/approve; // explicit POST with path param
-  rpc RecalculateExample(RecalculateExampleRequest) returns (RecalculateExampleResponse) Internal;        // domain-only, no HTTP
+
+  // GetExample returns a single Example by resource name.
+  rpc GetExample(GetExampleRequest) returns (Example) {
+    option (google.api.http) = {
+      get: "/v1/{name=examples/*}"
+    };
+  }
+
+  // ListExamples returns a paginated list of Examples.
+  rpc ListExamples(ListExamplesRequest) returns (ListExamplesResponse) {
+    option (google.api.http) = {
+      get: "/v1/examples"
+    };
+  }
+
+  // CreateExample creates a new Example.
+  rpc CreateExample(CreateExampleRequest) returns (Example) {
+    option (google.api.http) = {
+      post: "/v1/examples"
+      body: "example"
+    };
+  }
+
+  // UpdateExample updates an Example (partial update via field_mask).
+  rpc UpdateExample(UpdateExampleRequest) returns (Example) {
+    option (google.api.http) = {
+      patch: "/v1/{example.name=examples/*}"
+      body: "example"
+    };
+  }
+
+  // DeleteExample deletes an Example.
+  rpc DeleteExample(DeleteExampleRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/v1/{name=examples/*}"
+    };
+  }
+
+  // SearchExamples is a custom method for full-text search.
+  rpc SearchExamples(SearchExamplesRequest) returns (SearchExamplesResponse) {
+    option (google.api.http) = {
+      post: "/v1/examples:search"
+      body: "*"
+    };
+  }
+
+  // RecalculateExample is an internal domain operation (no HTTP endpoint).
+  rpc RecalculateExample(RecalculateExampleRequest) returns (RecalculateExampleResponse) Internal;
+}
+
+// ── Standard request/response messages ────────────────────────────────────────
+
+message GetExampleRequest {
+  // Required. Resource name: "examples/{example}".
+  string name = 1;
+}
+
+message ListExamplesRequest {
+  int32  page_size  = 1;
+  string page_token = 2;
+  string filter     = 3;
+  string order_by   = 4;
+}
+
+message ListExamplesResponse {
+  repeated Example examples       = 1;
+  string           next_page_token = 2;
+  int32            total_size      = 3;
 }
 
 message CreateExampleRequest {
-  string name = 1;
-  string description = 2;
-}
-
-message CreateExampleResponse {
-  string id = 1;
-  string name = 2;
-  string description = 3;
-}
-
-message GetExampleRequest {
-  string id = 1;
-}
-
-message GetExampleResponse {
-  string id = 1;
-  string name = 2;
-  string description = 3;
-}
-
-message ListExampleRequest {
-  int32 page = 1;
-  int32 page_size = 2;
-}
-
-message ListExampleResponse {
-  repeated GetExampleResponse items = 1;
-  int32 total = 2;
+  // The Example resource to create.
+  Example example = 1;
 }
 
 message UpdateExampleRequest {
-  string id = 1;
-  string name = 2;
-  string description = 3;
-}
-
-message UpdateExampleResponse {
-  string id = 1;
-  string name = 2;
-  string description = 3;
+  // The Example resource with updated fields.
+  Example                  example     = 1;
+  // The set of fields to update.
+  google.protobuf.FieldMask update_mask = 2;
 }
 
 message DeleteExampleRequest {
-  string id = 1;
+  // Required. Resource name: "examples/{example}".
+  string name = 1;
 }
 
-message DeleteExampleResponse {
-  bool success = 1;
+// ── Custom method messages ─────────────────────────────────────────────────────
+
+message SearchExamplesRequest {
+  string query      = 1;
+  int32  page_size  = 2;
+  string page_token = 3;
 }
 
-message SearchExampleRequest {
-  string query = 1;
-  int32 page = 2;
+message SearchExamplesResponse {
+  repeated Example examples       = 1;
+  string           next_page_token = 2;
+  int32            total_size      = 3;
 }
 
-message SearchExampleResponse {
-  repeated GetExampleResponse items = 1;
-  int32 total = 2;
-}
-
-message ApproveExampleRequest {
-  string id = 1;
-}
-
-message ApproveExampleResponse {
-  bool success = 1;
-}
+// ── Internal domain messages ───────────────────────────────────────────────────
 
 message RecalculateExampleRequest {
-  string id = 1;
+  string name = 1;
 }
 
 message RecalculateExampleResponse {

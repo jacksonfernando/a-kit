@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"text/template"
 )
@@ -16,20 +17,31 @@ type GeneratorData struct {
 	ServiceName      string    // proto service name, e.g. "ExampleService"
 	PackageName      string    // Go package name (lowercase, no hyphens)
 	DirPrefix        string    // "" for external, "internal/" for internal modules
-	ModuleImportPath string    // full import path for this module's interfaces, e.g. "github.com/user/my-service/example" or "github.com/user/my-service/internal/example"
+	ModuleImportPath string    // full import path for this module's interfaces
 	RPCs             []RPCInfo // RPCs that belong to this data set
 	Messages         []MsgInfo // all proto messages as Go struct info
+	NeedsEmpty       bool      // true when any RPC response is Empty (google.protobuf.Empty)
 }
 
 // RPCInfo carries all derived information about one RPC.
 type RPCInfo struct {
-	Name         string // "CreateExample"
-	RequestType  string // "CreateExampleRequest"
-	ResponseType string // "CreateExampleResponse"
-	HTTPMethod   string // "POST"
-	HTTPPath     string // "/examples"
-	HasPathID    bool   // true → path ends with /:id
-	ReceiverName string // lowercase first word, e.g. "h"
+	Name         string      // "CreateExample"
+	RequestType  string      // "CreateExampleRequest"
+	ResponseType string      // "CreateExampleResponse" or "Example"
+	HTTPMethod   string      // "POST"
+	HTTPPath     string      // "/v1/examples"  (full path, Echo-compatible)
+	HasPathID    bool        // true → at least one path parameter exists
+	PathParams   []PathParam // named path parameters for handler binding
+	NeedsBody    bool        // true → method sends a body (POST/PUT/PATCH)
+	ReceiverName string      // lowercase first word, e.g. "h"
+}
+
+// PathParam describes a single path parameter extracted from the route.
+type PathParam struct {
+	EchoParam string // param name as used in Echo: c.Param("name")
+	GoField   string // PascalCase Go field name: "Name"
+	Nested    bool   // true if it refers to a nested field (e.g. "order.name")
+	FieldPath string // original field path for reference: "order.name"
 }
 
 // MsgInfo carries information about one proto message mapped to Go.
@@ -45,8 +57,9 @@ type FieldInfo struct {
 	GoName      string // "UserID"
 	GoType      string // "string", "int32", "[]*SomeMsg", …
 	JSONTag     string // `json:"user_id"`
-	ValidateTag string // `validate:"required"` or ""
+	ValidateTag string // `validate:"required"` or `validate:"required,dive"` or ""
 	IsID        bool   // true if field is named "id"
+	Repeated    bool   // true if the field is a slice (repeated in proto)
 }
 
 // GenerateModule generates all Go files for a module inside projectDir.
@@ -155,19 +168,34 @@ func ReadModuleName(projectDir string) (string, error) {
 // one for external RPCs (no Internal keyword) and one for Internal RPCs.
 func buildGeneratorDataPair(pf *ProtoFile, svc ServiceDef, moduleName, modulePath string) (external, internal GeneratorData) {
 	msgs := buildMessages(pf)
+	needsEmpty := false
 
 	var extRPCs, intRPCs []RPCInfo
 	for _, r := range svc.RPCs {
-		var method, path string
-		var hasID bool
+		if r.ResponseType == "Empty" {
+			needsEmpty = true
+		}
+
+		var method, echoPath string
+		var pathParams []PathParam
 
 		if r.HTTPMethod != "" {
-			// Explicit route annotation wins over name inference.
 			method = r.HTTPMethod
-			path = r.HTTPPath
-			hasID = strings.Contains(path, "/:id") || strings.Contains(path, "/{id}")
+			// Detect if path is Google API format (contains {…}) or plain Echo format
+			if strings.Contains(r.HTTPPath, "{") {
+				echoPath, pathParams = googlePathToEcho(r.HTTPPath)
+			} else {
+				echoPath = r.HTTPPath
+				// Extract :param style params from plain Echo paths
+				for _, seg := range strings.Split(echoPath, "/") {
+					if strings.HasPrefix(seg, ":") {
+						p := strings.TrimPrefix(seg, ":")
+						pathParams = append(pathParams, pathParamFromName(p))
+					}
+				}
+			}
 		} else {
-			method, path, hasID = inferRoute(r.Name, moduleName)
+			method, echoPath, pathParams = inferRoute(r.Name, moduleName)
 		}
 
 		info := RPCInfo{
@@ -175,8 +203,10 @@ func buildGeneratorDataPair(pf *ProtoFile, svc ServiceDef, moduleName, modulePat
 			RequestType:  r.RequestType,
 			ResponseType: r.ResponseType,
 			HTTPMethod:   method,
-			HTTPPath:     path,
-			HasPathID:    hasID,
+			HTTPPath:     echoPath,
+			HasPathID:    len(pathParams) > 0,
+			PathParams:   pathParams,
+			NeedsBody:    method == "POST" || method == "PUT" || method == "PATCH",
 		}
 		if r.Internal {
 			intRPCs = append(intRPCs, info)
@@ -191,6 +221,7 @@ func buildGeneratorDataPair(pf *ProtoFile, svc ServiceDef, moduleName, modulePat
 		ServiceName: svc.Name,
 		PackageName: toPackageName(moduleName),
 		Messages:    msgs,
+		NeedsEmpty:  needsEmpty,
 	}
 
 	external = base
@@ -213,14 +244,20 @@ func buildMessages(pf *ProtoFile) []MsgInfo {
 		fields := make([]FieldInfo, 0, len(m.Fields))
 		for _, f := range m.Fields {
 			fi := FieldInfo{
-				ProtoName:   f.Name,
-				GoName:      toPascalCase(f.Name),
-				GoType:      protoTypeToGo(f.Type, f.Repeated),
-				JSONTag:     f.Name,
-				IsID:        f.Name == "id",
+				ProtoName: f.Name,
+				GoName:    toPascalCase(f.Name),
+				GoType:    protoTypeToGo(f.Type, f.Repeated),
+				JSONTag:   f.Name,
+				IsID:      f.Name == "id",
+				Repeated:  f.Repeated,
 			}
 			if isReq {
-				fi.ValidateTag = "required"
+				if f.Repeated && !isPrimitiveType(f.Type) {
+					// repeated message type: dive so each element is validated recursively
+					fi.ValidateTag = "required,dive"
+				} else {
+					fi.ValidateTag = "required"
+				}
 			}
 			fields = append(fields, fi)
 		}
@@ -233,24 +270,98 @@ func buildMessages(pf *ProtoFile) []MsgInfo {
 	return msgs
 }
 
-// inferRoute derives HTTP method, path, and whether there's a /:id segment.
-func inferRoute(rpcName, moduleName string) (method, path string, hasID bool) {
+// inferRoute derives HTTP method, path (full, Echo-compatible), and path params from the RPC name.
+func inferRoute(rpcName, moduleName string) (method, path string, pathParams []PathParam) {
 	lower := strings.ToLower(rpcName)
-	plural := strings.ToLower(moduleName) + "s"
+	plural := "/v1/" + strings.ToLower(moduleName) + "s"
 
 	switch {
 	case strings.HasPrefix(lower, "create"):
-		return "POST", "/" + plural, false
+		return "POST", plural, nil
 	case strings.HasPrefix(lower, "list"):
-		return "GET", "/" + plural, false
+		return "GET", plural, nil
 	case strings.HasPrefix(lower, "get"):
-		return "GET", "/" + plural + "/:id", true
+		return "GET", plural + "/:id", []PathParam{pathParamFromName("id")}
 	case strings.HasPrefix(lower, "update"):
-		return "PUT", "/" + plural + "/:id", true
+		return "PATCH", plural + "/:id", []PathParam{pathParamFromName("id")}
 	case strings.HasPrefix(lower, "delete"):
-		return "DELETE", "/" + plural + "/:id", true
+		return "DELETE", plural + "/:id", []PathParam{pathParamFromName("id")}
 	default:
-		return "POST", "/" + strings.ToLower(rpcName), false
+		return "POST", "/v1/" + strings.ToLower(rpcName), nil
+	}
+}
+
+// googlePathToEcho converts a Google API HTTP path template to an Echo-compatible path.
+// e.g. "/v1/{name=examples/*}" → "/v1/examples/:name"
+// e.g. "/v1/{name=examples/*}:search" → "/v1/examples/:name/search"
+func googlePathToEcho(template string) (echoPath string, pathParams []PathParam) {
+	// Detect and strip custom method suffix (:verb at the end, outside {})
+	customMethod := ""
+	braceDepth := 0
+	lastColon := -1
+	for i, ch := range template {
+		switch ch {
+		case '{':
+			braceDepth++
+		case '}':
+			braceDepth--
+		case ':':
+			if braceDepth == 0 {
+				lastColon = i
+			}
+		}
+	}
+	if lastColon > 0 {
+		customMethod = template[lastColon+1:]
+		template = template[:lastColon]
+	}
+
+	// Replace {fieldPath=collection/*} and {fieldPath} with collection/:param
+	reParam := regexp.MustCompile(`\{([\w.]+)(?:=([^}]*))?\}`)
+	echoPath = reParam.ReplaceAllStringFunc(template, func(match string) string {
+		groups := reParam.FindStringSubmatch(match)
+		fieldPath := groups[1] // e.g. "name" or "order.name"
+		pattern := groups[2]   // e.g. "examples/*" or ""
+
+		// Use the last segment of a dotted field path as the Echo param name.
+		parts := strings.Split(fieldPath, ".")
+		paramName := parts[len(parts)-1]
+		nested := len(parts) > 1
+
+		pp := PathParam{
+			EchoParam: paramName,
+			GoField:   toPascalCase(paramName),
+			Nested:    nested,
+			FieldPath: fieldPath,
+		}
+		pathParams = append(pathParams, pp)
+
+		if pattern != "" {
+			// Extract the innermost collection name from the pattern.
+			// "examples/*" → "examples", "projects/*/orders/*" → "orders"
+			segs := strings.Split(strings.TrimSuffix(pattern, "/*"), "/")
+			collection := segs[len(segs)-1]
+			if collection == "*" && len(segs) >= 2 {
+				collection = segs[len(segs)-2]
+			}
+			return collection + "/:" + paramName
+		}
+		return ":" + paramName
+	})
+
+	if customMethod != "" {
+		echoPath += "/" + customMethod
+	}
+	return echoPath, pathParams
+}
+
+// pathParamFromName builds a PathParam for a simple (non-nested) parameter name.
+func pathParamFromName(name string) PathParam {
+	return PathParam{
+		EchoParam: name,
+		GoField:   toPascalCase(name),
+		Nested:    false,
+		FieldPath: name,
 	}
 }
 
@@ -263,10 +374,14 @@ func toPascalCase(s string) string {
 			continue
 		}
 		upper := strings.ToUpper(p)
-		// common Go acronyms
+		// common Go acronyms (singular and plural)
 		switch upper {
 		case "ID", "URL", "URI", "HTTP", "JSON", "API", "SQL", "UUID":
 			b.WriteString(upper)
+		case "IDS":
+			b.WriteString("IDs")
+		case "URLS", "URIS":
+			b.WriteString(strings.ToUpper(p[:len(p)-1]) + "s")
 		default:
 			b.WriteString(strings.ToUpper(p[:1]) + p[1:])
 		}
@@ -286,6 +401,16 @@ func lowerFirst(s string) string {
 		return s
 	}
 	return strings.ToLower(s[:1]) + s[1:]
+}
+
+func isPrimitiveType(protoType string) bool {
+	switch protoType {
+	case "string", "int32", "int64", "uint32", "uint64",
+		"float", "double", "bool", "bytes",
+		"google.protobuf.FieldMask":
+		return true
+	}
+	return false
 }
 
 // protoTypeToGo maps a proto field type to a Go type string.
@@ -310,6 +435,10 @@ func protoTypeToGo(protoType string, repeated bool) string {
 		goType = "bool"
 	case "bytes":
 		goType = "[]byte"
+	case "google.protobuf.FieldMask":
+		goType = "[]string" // field paths, e.g. ["display_name", "description"]
+	case "google.protobuf.Empty", "Empty":
+		goType = "struct{}"
 	default:
 		// treat as a message reference
 		goType = "*" + protoType
@@ -329,6 +458,10 @@ func protoTypeToGo(protoType string, repeated bool) string {
 
 var tmplModels = `// Code generated by a-kit. DO NOT EDIT.
 package models
+{{if .NeedsEmpty}}
+// Empty represents an absent response body (mapped from google.protobuf.Empty).
+type Empty struct{}
+{{end}}
 {{range .Messages}}
 type {{.Name}} struct {
 {{- range .Fields}}
@@ -379,26 +512,43 @@ type {{.ServiceName}}Handler struct {
 	mw  middlewares.GoMiddlewareInterface
 }
 
-// New{{.ServiceName}}Handler registers all routes for the {{.PackageName}} module.
+// New{{.ServiceName}}Handler registers all HTTP routes for the {{.PackageName}} module.
 func New{{.ServiceName}}Handler(e *echo.Echo, svc {{.PackageName}}.{{.ServiceName}}Interface, mw middlewares.GoMiddlewareInterface) {
 	h := &{{.ServiceName}}Handler{svc: svc, mw: mw}
-	v1 := e.Group("/v1")
 {{- range .RPCs}}
-	v1.{{.HTTPMethod}}("{{.HTTPPath}}", h.{{.Name}})
+	e.{{.HTTPMethod}}("{{.HTTPPath}}", h.{{.Name}})
 {{- end}}
 }
 {{range .RPCs}}
 func (h *{{$.ServiceName}}Handler) {{.Name}}(c echo.Context) error {
-{{- if .HasPathID}}
 	var req models.{{.RequestType}}
-	req.ID = c.Param("id")
+{{- if and .HasPathID .NeedsBody}}
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, global.BadResponse{Code: http.StatusBadRequest, Message: "invalid request body"})
+	}
+	if err := validator.ValidateStruct(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, global.BadResponse{Code: http.StatusBadRequest, Message: err.Error()})
+	}
+{{- range .PathParams}}
+{{- if .Nested}}
+	// TODO: bind path param ":{{.EchoParam}}" to nested field {{.FieldPath}}
+{{- else}}
+	req.{{.GoField}} = c.Param("{{.EchoParam}}")
+{{- end}}
+{{- end}}
+{{- else if .HasPathID}}
+{{- range .PathParams}}
+{{- if .Nested}}
+	// TODO: bind path param ":{{.EchoParam}}" to nested field {{.FieldPath}}
+{{- else}}
+	req.{{.GoField}} = c.Param("{{.EchoParam}}")
+{{- end}}
+{{- end}}
 {{- else if eq .HTTPMethod "GET"}}
-	var req models.{{.RequestType}}
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, global.BadResponse{Code: http.StatusBadRequest, Message: "invalid query params"})
 	}
 {{- else}}
-	var req models.{{.RequestType}}
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, global.BadResponse{Code: http.StatusBadRequest, Message: "invalid request body"})
 	}
