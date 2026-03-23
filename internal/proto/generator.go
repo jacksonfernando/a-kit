@@ -207,23 +207,20 @@ func buildGeneratorDataPair(pf *ProtoFile, svc ServiceDef, moduleName, modulePat
 		var method, echoPath string
 		var pathParams []PathParam
 
-		if r.HTTPMethod != "" {
+		if r.HTTPMethod == "" {
+			method, echoPath, pathParams = inferRoute(r.Name, moduleName)
+		} else if strings.Contains(r.HTTPPath, "{") {
 			method = r.HTTPMethod
-			// Detect if path is Google API format (contains {…}) or plain Echo format
-			if strings.Contains(r.HTTPPath, "{") {
-				echoPath, pathParams = googlePathToEcho(r.HTTPPath)
-			} else {
-				echoPath = r.HTTPPath
-				// Extract :param style params from plain Echo paths
-				for _, seg := range strings.Split(echoPath, "/") {
-					if strings.HasPrefix(seg, ":") {
-						p := strings.TrimPrefix(seg, ":")
-						pathParams = append(pathParams, pathParamFromName(p))
-					}
+			echoPath, pathParams = googlePathToEcho(r.HTTPPath)
+		} else {
+			method = r.HTTPMethod
+			echoPath = r.HTTPPath
+			for _, seg := range strings.Split(echoPath, "/") {
+				if strings.HasPrefix(seg, ":") {
+					p := strings.TrimPrefix(seg, ":")
+					pathParams = append(pathParams, pathParamFromName(p))
 				}
 			}
-		} else {
-			method, echoPath, pathParams = inferRoute(r.Name, moduleName)
 		}
 
 		info := RPCInfo{
@@ -243,17 +240,17 @@ func buildGeneratorDataPair(pf *ProtoFile, svc ServiceDef, moduleName, modulePat
 		info.TestParamNames = testParamNames
 		info.TestParamValues = testParamValues
 		info.ExpectedStatus = expectedHTTPStatus(method)
+		info.TestQueryString = computeTestQueryString(r.RequestType, pathParams, msgs)
 		if info.NeedsBody {
 			info.TestBody = computeTestBody(r.RequestType, msgs)
-		} else {
-			info.TestQueryString = computeTestQueryString(r.RequestType, pathParams, msgs)
+			info.TestQueryString = ""
 		}
 
+		target := &extRPCs
 		if r.Internal {
-			intRPCs = append(intRPCs, info)
-		} else {
-			extRPCs = append(extRPCs, info)
+			target = &intRPCs
 		}
+		*target = append(*target, info)
 	}
 
 	base := GeneratorData{
@@ -307,11 +304,10 @@ func buildMessages(pf *ProtoFile) []MsgInfo {
 				Repeated:  f.Repeated,
 			}
 			if isReq {
+				fi.ValidateTag = "required"
 				if f.Repeated && !isPrimitiveType(f.Type) {
 					// repeated message type: dive so each element is validated recursively
 					fi.ValidateTag = "required,dive"
-				} else {
-					fi.ValidateTag = "required"
 				}
 			}
 			fields = append(fields, fi)

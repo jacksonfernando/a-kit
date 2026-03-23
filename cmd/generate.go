@@ -41,7 +41,9 @@ Examples:
 		var protoFiles []string
 		if len(args) == 1 {
 			protoFiles = []string{filepath.Join(apiDir, args[0]+".proto")}
-		} else {
+		}
+
+		if len(protoFiles) == 0 {
 			entries, err := os.ReadDir(apiDir)
 			if err != nil {
 				return fmt.Errorf("reading api/: %w", err)
