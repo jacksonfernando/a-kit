@@ -8,7 +8,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const bannerFmt = `
+const (
+	colorLightPurple = "\033[38;5;147m"
+	colorReset       = "\033[0m"
+
+	bannerFmt = colorLightPurple + `
   ██████╗       ██╗  ██╗██╗████████╗
   ██╔══██╗      ██║ ██╔╝██║╚══██╔══╝
   ███████║█████╗█████╔╝ ██║   ██║
@@ -17,7 +21,8 @@ const bannerFmt = `
   ╚═╝  ╚═╝      ╚═╝  ╚═╝╚═╝   ╚═╝
 
   Go project scaffolding CLI   %s
-`
+` + colorReset
+)
 
 var rootCmd = &cobra.Command{
 	Use:   "a-kit",
