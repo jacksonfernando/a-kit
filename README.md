@@ -12,6 +12,72 @@ A CLI that scaffolds production-ready Go microservices from **protobuf definitio
 
 ---
 
+## How it works
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        a-kit create                         │
+└─────────────────────────────────────────────────────────────┘
+              │
+              ▼
+  ┌───────────────────────┐
+  │   <project>/          │   Bootstrapped project skeleton
+  │   ├── main.go         │   (server entry point)
+  │   ├── go.mod          │
+  │   ├── Makefile        │
+  │   ├── config.yaml     │
+  │   └── api/            │
+  │       └── example.proto◄── You edit this file
+  └───────────────────────┘
+              │
+              │  a-kit generate [module]
+              ▼
+  ┌─────────────────────────────────┐
+  │  Reads api/<module>.proto        │
+  │                                 │
+  │  service ExampleService {        │
+  │    rpc ListExamples(...) {       │
+  │      option (google.api.http) = │
+  │        { get: "/v1/examples" }; │
+  │    }                            │
+  │    ...                          │
+  │  }                              │
+  └──────────────┬──────────────────┘
+                 │  Parse RPCs + HTTP options
+                 ▼
+  ┌──────────────────────────────────────────────────────────┐
+  │                  Generated output                        │
+  │                                                          │
+  │  <module>/                     internal/<module>/        │
+  │  ├── handler/                  ├── handler/              │
+  │  │   ├── handler.go            │   └── handler.go        │
+  │  │   └── handler_test.go       ├── service/              │
+  │  ├── service/                  │   ├── service.go        │
+  │  │   ├── service.go            │   └── service_test.go   │
+  │  │   └── service_test.go       ├── repository/           │
+  │  ├── repository/               │   └── repository.go     │
+  │  │   └── repository.go         └── mocks/                │
+  │  ├── models/                       ├── mock_service.go   │
+  │  │   └── models.go                 └── mock_repo.go      │
+  │  └── mocks/                                              │
+  │      ├── mock_service.go       (Internal RPCs → no HTTP  │
+  │      └── mock_repo.go          handler generated)        │
+  └──────────────────────────────────────────────────────────┘
+              │
+              ▼
+  ┌───────────────────────────────────┐
+  │  HTTP method  →  Echo route       │
+  │                                   │
+  │  GET    /v1/examples          List│
+  │  POST   /v1/examples        Create│
+  │  GET    /v1/examples/:name     Get│
+  │  PATCH  /v1/examples/:name  Update│
+  │  DELETE /v1/examples/:name  Delete│
+  └───────────────────────────────────┘
+```
+
+---
+
 ## Installation
 
 ```bash
