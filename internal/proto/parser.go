@@ -24,7 +24,9 @@ type RPCDef struct {
 	Name         string
 	RequestType  string
 	ResponseType string
-	Internal     bool // true when the RPC is marked with the Internal keyword
+	Internal     bool   // true when the RPC is marked with the Internal keyword
+	HTTPMethod   string // explicit HTTP method override (GET/POST/PUT/DELETE/PATCH), empty = infer
+	HTTPPath     string // explicit HTTP path override (e.g. /orders/:id/approve), empty = infer
 }
 
 // MessageDef represents a proto message.
@@ -44,7 +46,8 @@ type FieldDef struct {
 var (
 	rePackage = regexp.MustCompile(`^package\s+([\w.]+)\s*;`)
 	reService = regexp.MustCompile(`^service\s+(\w+)\s*\{`)
-	reRPC     = regexp.MustCompile(`rpc\s+(\w+)\s*\(\s*(\w+)\s*\)\s+returns\s*\(\s*(\w+)\s*\)(\s+Internal)?`)
+	reRPC     = regexp.MustCompile(`rpc\s+(\w+)\s*\(\s*(\w+)\s*\)\s+returns\s*\(\s*(\w+)\s*\)(.*)`)
+	reRoute   = regexp.MustCompile(`(GET|POST|PUT|DELETE|PATCH)\s+(\S+)`)
 	reMessage = regexp.MustCompile(`^message\s+(\w+)\s*\{`)
 	reField   = regexp.MustCompile(`^(repeated\s+|optional\s+)?(\w+)\s+(\w+)\s*=\s*(\d+)\s*;`)
 )
@@ -95,13 +98,23 @@ func ParseProto(content string) (*ProtoFile, error) {
 		// ── inside a service ──────────────────────────────────────────────
 		if depth == 1 && len(stack) > 0 && stack[len(stack)-1].kind == "service" {
 			if m := reRPC.FindStringSubmatch(line); m != nil {
-				svc := &pf.Services[stack[len(stack)-1].idx]
-				svc.RPCs = append(svc.RPCs, RPCDef{
+				suffix := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(m[4]), ";"))
+
+				rpc := RPCDef{
 					Name:         m[1],
 					RequestType:  m[2],
 					ResponseType: m[3],
-					Internal:     strings.TrimSpace(m[4]) == "Internal",
-				})
+					Internal:     strings.Contains(suffix, "Internal"),
+				}
+
+				// Explicit HTTP route: METHOD /path (e.g. GET /orders/:id/approve)
+				if rm := reRoute.FindStringSubmatch(suffix); rm != nil {
+					rpc.HTTPMethod = rm[1]
+					rpc.HTTPPath = rm[2]
+				}
+
+				svc := &pf.Services[stack[len(stack)-1].idx]
+				svc.RPCs = append(svc.RPCs, rpc)
 			}
 		}
 

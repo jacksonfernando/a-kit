@@ -158,7 +158,18 @@ func buildGeneratorDataPair(pf *ProtoFile, svc ServiceDef, moduleName, modulePat
 
 	var extRPCs, intRPCs []RPCInfo
 	for _, r := range svc.RPCs {
-		method, path, hasID := inferRoute(r.Name, moduleName)
+		var method, path string
+		var hasID bool
+
+		if r.HTTPMethod != "" {
+			// Explicit route annotation wins over name inference.
+			method = r.HTTPMethod
+			path = r.HTTPPath
+			hasID = strings.Contains(path, "/:id") || strings.Contains(path, "/{id}")
+		} else {
+			method, path, hasID = inferRoute(r.Name, moduleName)
+		}
+
 		info := RPCInfo{
 			Name:         r.Name,
 			RequestType:  r.RequestType,

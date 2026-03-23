@@ -420,15 +420,26 @@ var tmplExampleProto = `syntax = "proto3";
 package example;
 
 // ExampleService manages example resources.
-// RPCs without a modifier are exposed as HTTP endpoints (in example/).
-// RPCs marked "Internal" are domain-only (in internal/example/, no HTTP route).
+//
+// Route annotations (optional — overrides name-based inference):
+//   rpc Foo(FooReq) returns (FooResp) GET  /path;
+//   rpc Foo(FooReq) returns (FooResp) POST /path/:id/action;
+//
+// Without an annotation the HTTP method and path are inferred from the RPC name:
+//   Create* → POST /examples          List*   → GET  /examples
+//   Get*    → GET  /examples/:id      Update* → PUT  /examples/:id
+//   Delete* → DELETE /examples/:id    other   → POST /<rpc-name>
+//
+// Mark an RPC "Internal" to generate it in internal/example/ with no HTTP handler.
 service ExampleService {
-  rpc CreateExample(CreateExampleRequest)           returns (CreateExampleResponse);
-  rpc GetExample(GetExampleRequest)                 returns (GetExampleResponse);
-  rpc ListExample(ListExampleRequest)               returns (ListExampleResponse);
-  rpc UpdateExample(UpdateExampleRequest)           returns (UpdateExampleResponse);
-  rpc DeleteExample(DeleteExampleRequest)           returns (DeleteExampleResponse);
-  rpc RecalculateExample(RecalculateExampleRequest) returns (RecalculateExampleResponse) Internal;
+  rpc CreateExample(CreateExampleRequest)           returns (CreateExampleResponse);                      // POST   /examples
+  rpc GetExample(GetExampleRequest)                 returns (GetExampleResponse);                         // GET    /examples/:id
+  rpc ListExample(ListExampleRequest)               returns (ListExampleResponse);                        // GET    /examples
+  rpc UpdateExample(UpdateExampleRequest)           returns (UpdateExampleResponse);                      // PUT    /examples/:id
+  rpc DeleteExample(DeleteExampleRequest)           returns (DeleteExampleResponse);                      // DELETE /examples/:id
+  rpc SearchExample(SearchExampleRequest)           returns (SearchExampleResponse) GET /examples/search; // explicit GET /examples/search
+  rpc ApproveExample(ApproveExampleRequest)         returns (ApproveExampleResponse) POST /examples/:id/approve; // explicit POST with path param
+  rpc RecalculateExample(RecalculateExampleRequest) returns (RecalculateExampleResponse) Internal;        // domain-only, no HTTP
 }
 
 message CreateExampleRequest {
@@ -479,6 +490,24 @@ message DeleteExampleRequest {
 }
 
 message DeleteExampleResponse {
+  bool success = 1;
+}
+
+message SearchExampleRequest {
+  string query = 1;
+  int32 page = 2;
+}
+
+message SearchExampleResponse {
+  repeated GetExampleResponse items = 1;
+  int32 total = 2;
+}
+
+message ApproveExampleRequest {
+  string id = 1;
+}
+
+message ApproveExampleResponse {
   bool success = 1;
 }
 
