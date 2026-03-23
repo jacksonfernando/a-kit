@@ -1,42 +1,10 @@
 package proto
 
 import (
-	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
 )
-
-// frameKind identifies the type of parser nesting context on the stack.
-type frameKind string
-
-const (
-	frameKindService    frameKind = "service"
-	frameKindMessage    frameKind = "message"
-	frameKindRPCOptions frameKind = "rpc_options"
-	frameKindHTTPOption frameKind = "http_option"
-)
-
-// protoModifier represents a proto field modifier keyword.
-type protoModifier string
-
-const (
-	modifierRepeated protoModifier = "repeated"
-	modifierOptional protoModifier = "optional"
-)
-
-// HTTPMethod represents an HTTP verb.
-type HTTPMethod string
-
-const (
-	HTTPMethodGET    HTTPMethod = http.MethodGet
-	HTTPMethodPOST   HTTPMethod = http.MethodPost
-	HTTPMethodPUT    HTTPMethod = http.MethodPut
-	HTTPMethodPATCH  HTTPMethod = http.MethodPatch
-	HTTPMethodDELETE HTTPMethod = http.MethodDelete
-)
-
-const protoTypeEmpty = "google.protobuf.Empty"
 
 // ProtoFile holds the parsed contents of a .proto file.
 type ProtoFile struct {

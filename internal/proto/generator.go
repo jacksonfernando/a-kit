@@ -11,45 +11,6 @@ import (
 	"text/template"
 )
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Constants
-// ─────────────────────────────────────────────────────────────────────────────
-
-// templateName identifies an embedded code-generation template file.
-type templateName string
-
-const (
-	tmplModels         templateName = "models.tmpl"
-	tmplInterface      templateName = "interface.tmpl"
-	tmplHandler        templateName = "handler.tmpl"
-	tmplHandlerTest    templateName = "handler_test.tmpl"
-	tmplService        templateName = "service.tmpl"
-	tmplServiceTest    templateName = "service_test.tmpl"
-	tmplRepository     templateName = "repository.tmpl"
-	tmplMockRepository templateName = "mock_repository.tmpl"
-	tmplMockService    templateName = "mock_service.tmpl"
-)
-
-// dirSegment is a directory path segment used when building generated file paths.
-type dirSegment string
-
-const (
-	dirModels     dirSegment = "models"
-	dirHandler    dirSegment = "handler"
-	dirHTTP       dirSegment = "http"
-	dirService    dirSegment = "service"
-	dirRepository dirSegment = "repository"
-	dirMySQL      dirSegment = "mysql"
-	dirMock       dirSegment = "_mock"
-	dirInternal   dirSegment = "internal"
-)
-
-const (
-	suffixRequest     = "Request"
-	fieldIDName       = "id"
-	goModPrefix       = "module "
-	dirPrefixInternal = "internal/"
-)
 type GeneratorData struct {
 	ModuleName       string    // e.g. "example"
 	ModulePath       string    // Go module path, e.g. "github.com/user/my-service"
