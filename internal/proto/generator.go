@@ -120,7 +120,7 @@ func GenerateModule(pf *ProtoFile, moduleName, modulePath, projectDir string) er
 			filepath.Join(moduleName, "interface.go"):                                     mustProtoTmpl("interface.tmpl"),
 			filepath.Join(moduleName, "handler", "http", moduleName+"_handler.go"):        mustProtoTmpl("handler.tmpl"),
 			filepath.Join(moduleName, "service", moduleName+"_service.go"):                mustProtoTmpl("service.tmpl"),
-			filepath.Join(moduleName, "repository", "db", moduleName+"_repository.go"): mustProtoTmpl("repository.tmpl"),
+			filepath.Join(moduleName, "repository", "mysql", moduleName+"_repository.go"): mustProtoTmpl("repository.tmpl"),
 			filepath.Join(moduleName, "_mock", moduleName+"_repository_mock.go"):          mustProtoTmpl("mock_repository.tmpl"),
 			filepath.Join(moduleName, "_mock", moduleName+"_service_mock.go"):             mustProtoTmpl("mock_service.tmpl"),
 			filepath.Join(moduleName, "handler", "http", moduleName+"_handler_test.go"):   mustProtoTmpl("handler_test.tmpl"),
@@ -139,7 +139,7 @@ func GenerateModule(pf *ProtoFile, moduleName, modulePath, projectDir string) er
 		intFiles := map[string]string{
 			filepath.Join(intBase, "interface.go"):                                     mustProtoTmpl("interface.tmpl"),
 			filepath.Join(intBase, "service", moduleName+"_service.go"):                mustProtoTmpl("service.tmpl"),
-			filepath.Join(intBase, "repository", "db", moduleName+"_repository.go"): mustProtoTmpl("repository.tmpl"),
+			filepath.Join(intBase, "repository", "mysql", moduleName+"_repository.go"): mustProtoTmpl("repository.tmpl"),
 			filepath.Join(intBase, "_mock", moduleName+"_repository_mock.go"):          mustProtoTmpl("mock_repository.tmpl"),
 			filepath.Join(intBase, "_mock", moduleName+"_service_mock.go"):             mustProtoTmpl("mock_service.tmpl"),
 		}

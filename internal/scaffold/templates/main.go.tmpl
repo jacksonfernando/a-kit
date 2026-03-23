@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	exampleHTTPHandler "{{.ModuleName}}/example/handler/http"
-	exampleRepository "{{.ModuleName}}/example/repository/db"
+	exampleRepository "{{.ModuleName}}/example/repository/mysql"
 	exampleService "{{.ModuleName}}/example/service"
 
 	"{{.ModuleName}}/global"
@@ -45,7 +45,7 @@ func main() {
 	})
 
 	// Initialize example module
-	exampleRepo := exampleRepository.NewExampleServiceRepository(mysqlDb)
+	exampleRepo := exampleRepository.NewExampleServiceMySQLRepository(mysqlDb)
 	exampleSvc := exampleService.NewExampleService(exampleRepo)
 	exampleHTTPHandler.NewExampleServiceHandler(e, exampleSvc, mw)
 
