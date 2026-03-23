@@ -207,14 +207,17 @@ func buildGeneratorDataPair(pf *ProtoFile, svc ServiceDef, moduleName, modulePat
 		var method, echoPath string
 		var pathParams []PathParam
 
-		if r.HTTPMethod == "" {
+		method = r.HTTPMethod
+		echoPath = r.HTTPPath
+
+		switch {
+		case method == "":
 			method, echoPath, pathParams = inferRoute(r.Name, moduleName)
-		} else if strings.Contains(r.HTTPPath, "{") {
-			method = r.HTTPMethod
+		case strings.Contains(r.HTTPPath, "{"):
+			// Google API style path template: {name=examples/*} → :name
 			echoPath, pathParams = googlePathToEcho(r.HTTPPath)
-		} else {
-			method = r.HTTPMethod
-			echoPath = r.HTTPPath
+		default:
+			// Plain Echo path: extract :param segments
 			for _, seg := range strings.Split(echoPath, "/") {
 				if strings.HasPrefix(seg, ":") {
 					p := strings.TrimPrefix(seg, ":")
