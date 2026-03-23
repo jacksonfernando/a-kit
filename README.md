@@ -1,5 +1,4 @@
-```ansi
-[38;5;147m
+```
   ██████╗       ██╗  ██╗██╗████████╗
   ██╔══██╗      ██║ ██╔╝██║╚══██╔══╝
   ███████║█████╗█████╔╝ ██║   ██║
@@ -8,7 +7,6 @@
   ╚═╝  ╚═╝      ╚═╝  ╚═╝╚═╝   ╚═╝
 
   Go project scaffolding CLI
-[0m
 ```
 
 A CLI that scaffolds production-ready Go microservices from **protobuf definitions** (Google API style). No `protoc` required.
