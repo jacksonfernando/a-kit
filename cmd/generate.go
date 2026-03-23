@@ -10,6 +10,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	protoExtension = ".proto"
+	apiDirName     = "api"
+)
+
 var generateCmd = &cobra.Command{
 	Use:   "generate [module-name]",
 	Short: "Generate module code from protobuf definitions in api/",
@@ -33,14 +38,14 @@ Examples:
 			return fmt.Errorf("failed to read go.mod: %w\n(make sure you are inside a project directory)", err)
 		}
 
-		apiDir := filepath.Join(cwd, "api")
+		apiDir := filepath.Join(cwd, apiDirName)
 		if _, err := os.Stat(apiDir); os.IsNotExist(err) {
 			return fmt.Errorf("api/ directory not found — create api/<module>.proto files first")
 		}
 
 		var protoFiles []string
 		if len(args) == 1 {
-			protoFiles = []string{filepath.Join(apiDir, args[0]+".proto")}
+			protoFiles = []string{filepath.Join(apiDir, args[0]+protoExtension)}
 		}
 
 		if len(protoFiles) == 0 {
@@ -49,7 +54,7 @@ Examples:
 				return fmt.Errorf("reading api/: %w", err)
 			}
 			for _, e := range entries {
-				if !e.IsDir() && strings.HasSuffix(e.Name(), ".proto") {
+				if !e.IsDir() && strings.HasSuffix(e.Name(), protoExtension) {
 					protoFiles = append(protoFiles, filepath.Join(apiDir, e.Name()))
 				}
 			}
@@ -64,7 +69,7 @@ Examples:
 				return fmt.Errorf("proto file not found: %s", protoPath)
 			}
 
-			moduleName := strings.TrimSuffix(filepath.Base(protoPath), ".proto")
+			moduleName := strings.TrimSuffix(filepath.Base(protoPath), protoExtension)
 			fmt.Printf("🔄 Generating module %q from %s...\n", moduleName, filepath.Base(protoPath))
 
 			content, err := os.ReadFile(protoPath)

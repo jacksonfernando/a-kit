@@ -164,19 +164,18 @@ func TestInferRoute(t *testing.T) {
 	cases := []struct {
 		rpcName    string
 		moduleName string
-		method     string
+		method     HTTPMethod
 		path       string
 		hasParams  bool
 	}{
-		{"CreateOrder", "order", "POST", "/v1/orders", false},
-		{"ListOrders", "order", "GET", "/v1/orders", false},
-		{"GetOrder", "order", "GET", "/v1/orders/:id", true},
-		{"UpdateOrder", "order", "PATCH", "/v1/orders/:id", true},
-		{"DeleteOrder", "order", "DELETE", "/v1/orders/:id", true},
-		{"ProcessRefund", "order", "POST", "/v1/processrefund", false},
-		// different module name
-		{"CreateExample", "example", "POST", "/v1/examples", false},
-		{"GetExample", "example", "GET", "/v1/examples/:id", true},
+		{"CreateOrder", "order", HTTPMethodPOST, "/v1/orders", false},
+		{"ListOrders", "order", HTTPMethodGET, "/v1/orders", false},
+		{"GetOrder", "order", HTTPMethodGET, "/v1/orders/:id", true},
+		{"UpdateOrder", "order", HTTPMethodPATCH, "/v1/orders/:id", true},
+		{"DeleteOrder", "order", HTTPMethodDELETE, "/v1/orders/:id", true},
+		{"ProcessRefund", "order", HTTPMethodPOST, "/v1/processrefund", false},
+		{"CreateExample", "example", HTTPMethodPOST, "/v1/examples", false},
+		{"GetExample", "example", HTTPMethodGET, "/v1/examples/:id", true},
 	}
 
 	for _, tc := range cases {
@@ -312,17 +311,17 @@ func TestComputeTestURL(t *testing.T) {
 
 func TestExpectedHTTPStatus(t *testing.T) {
 	cases := []struct {
-		method string
+		method HTTPMethod
 		want   int
 	}{
-		{"POST", 201},
-		{"GET", 200},
-		{"PATCH", 200},
-		{"PUT", 200},
-		{"DELETE", 200},
+		{HTTPMethodPOST, 201},
+		{HTTPMethodGET, 200},
+		{HTTPMethodPATCH, 200},
+		{HTTPMethodPUT, 200},
+		{HTTPMethodDELETE, 200},
 	}
 	for _, tc := range cases {
-		t.Run(tc.method, func(t *testing.T) {
+		t.Run(string(tc.method), func(t *testing.T) {
 			assert.Equal(t, tc.want, expectedHTTPStatus(tc.method))
 		})
 	}

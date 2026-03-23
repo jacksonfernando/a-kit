@@ -109,13 +109,13 @@ service OrderService {
 	require.Len(t, rpcs, 4)
 
 	cases := []struct {
-		method string
+		method HTTPMethod
 		path   string
 	}{
-		{"POST", "/v1/orders"},
-		{"GET", "/v1/orders/:id"},
-		{"PATCH", "/v1/orders/:id"},
-		{"DELETE", "/v1/orders/:id"},
+		{HTTPMethodPOST, "/v1/orders"},
+		{HTTPMethodGET, "/v1/orders/:id"},
+		{HTTPMethodPATCH, "/v1/orders/:id"},
+		{HTTPMethodDELETE, "/v1/orders/:id"},
 	}
 	for i, tc := range cases {
 		assert.Equal(t, tc.method, rpcs[i].HTTPMethod, "rpc %d method", i)
@@ -167,16 +167,16 @@ service ExampleService {
 
 	cases := []struct {
 		name     string
-		method   string
+		method   HTTPMethod
 		path     string
 		body     string
 		respType string
 	}{
-		{"GetExample", "GET", "/v1/{name=examples/*}", "", "Example"},
-		{"CreateExample", "POST", "/v1/examples", "example", "Example"},
-		{"UpdateExample", "PATCH", "/v1/{example.name=examples/*}", "example", "Example"},
-		{"DeleteExample", "DELETE", "/v1/{name=examples/*}", "", "Empty"},
-		{"SearchExamples", "POST", "/v1/examples:search", "*", "SearchExamplesResponse"},
+		{"GetExample", HTTPMethodGET, "/v1/{name=examples/*}", "", "Example"},
+		{"CreateExample", HTTPMethodPOST, "/v1/examples", "example", "Example"},
+		{"UpdateExample", HTTPMethodPATCH, "/v1/{example.name=examples/*}", "example", "Example"},
+		{"DeleteExample", HTTPMethodDELETE, "/v1/{name=examples/*}", "", "Empty"},
+		{"SearchExamples", HTTPMethodPOST, "/v1/examples:search", "*", "SearchExamplesResponse"},
 	}
 	for i, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

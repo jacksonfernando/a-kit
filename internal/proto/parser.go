@@ -6,6 +6,37 @@ import (
 	"strings"
 )
 
+// frameKind identifies the type of parser nesting context on the stack.
+type frameKind string
+
+const (
+	frameKindService    frameKind = "service"
+	frameKindMessage    frameKind = "message"
+	frameKindRPCOptions frameKind = "rpc_options"
+	frameKindHTTPOption frameKind = "http_option"
+)
+
+// protoModifier represents a proto field modifier keyword.
+type protoModifier string
+
+const (
+	modifierRepeated protoModifier = "repeated"
+	modifierOptional protoModifier = "optional"
+)
+
+// HTTPMethod represents an HTTP verb.
+type HTTPMethod string
+
+const (
+	HTTPMethodGET    HTTPMethod = "GET"
+	HTTPMethodPOST   HTTPMethod = "POST"
+	HTTPMethodPUT    HTTPMethod = "PUT"
+	HTTPMethodPATCH  HTTPMethod = "PATCH"
+	HTTPMethodDELETE HTTPMethod = "DELETE"
+)
+
+const protoTypeEmpty = "google.protobuf.Empty"
+
 // ProtoFile holds the parsed contents of a .proto file.
 type ProtoFile struct {
 	Package  string
@@ -24,10 +55,10 @@ type RPCDef struct {
 	Name         string
 	RequestType  string
 	ResponseType string
-	Internal     bool   // true when marked with the Internal keyword
-	HTTPMethod   string // explicit HTTP method (GET/POST/PUT/PATCH/DELETE)
-	HTTPPath     string // HTTP path template (Google API or Echo format)
-	HTTPBody     string // body field for POST/PUT/PATCH ("*" or field name)
+	Internal     bool       // true when marked with the Internal keyword
+	HTTPMethod   HTTPMethod // explicit HTTP method (GET/POST/PUT/PATCH/DELETE)
+	HTTPPath     string     // HTTP path template (Google API or Echo format)
+	HTTPBody     string     // body field for POST/PUT/PATCH ("*" or field name)
 }
 
 // MessageDef represents a proto message.
@@ -62,11 +93,11 @@ func ParseProto(content string) (*ProtoFile, error) {
 
 	// frame tracks the current nesting context.
 	type frame struct {
-		kind      string // "service" | "message" | "rpc_options" | "http_option"
-		svcIdx    int    // service index (used by service, rpc_options, http_option)
-		msgIdx    int    // message index (used by message)
-		rpcIdx    int    // RPC index within service (used by rpc_options, http_option)
-		pushDepth int    // depth at the START of the line that opened this block
+		kind      frameKind
+		svcIdx    int // service index (used by service, rpc_options, http_option)
+		msgIdx    int // message index (used by message)
+		rpcIdx    int // RPC index within service (used by rpc_options, http_option)
+		pushDepth int // depth at the START of the line that opened this block
 	}
 
 	var stack []frame
@@ -103,14 +134,14 @@ func ParseProto(content string) (*ProtoFile, error) {
 				pf.Package = m[1]
 			} else if m := reService.FindStringSubmatch(line); m != nil {
 				pf.Services = append(pf.Services, ServiceDef{Name: m[1]})
-				stack = append(stack, frame{kind: "service", svcIdx: len(pf.Services) - 1, pushDepth: depth})
+				stack = append(stack, frame{kind: frameKindService, svcIdx: len(pf.Services) - 1, pushDepth: depth})
 			} else if m := reMessage.FindStringSubmatch(line); m != nil {
 				pf.Messages = append(pf.Messages, MessageDef{Name: m[1]})
-				stack = append(stack, frame{kind: "message", msgIdx: len(pf.Messages) - 1, pushDepth: depth})
+				stack = append(stack, frame{kind: frameKindMessage, msgIdx: len(pf.Messages) - 1, pushDepth: depth})
 			}
 
 		// ── Inside a service (depth == 1) ──────────────────────────────────
-		case depth == 1 && tf != nil && tf.kind == "service":
+		case depth == 1 && tf != nil && tf.kind == frameKindService:
 			if m := reRPC.FindStringSubmatch(line); m != nil {
 				suffix := m[4]
 				// strip trailing { and ; from suffix
@@ -124,7 +155,7 @@ func ParseProto(content string) (*ProtoFile, error) {
 				}
 				// Inline route annotation (our custom syntax: METHOD /path)
 				if rm := reRoute.FindStringSubmatch(suffix); rm != nil {
-					rpc.HTTPMethod = rm[1]
+					rpc.HTTPMethod = HTTPMethod(rm[1])
 					rpc.HTTPPath = rm[2]
 				}
 
@@ -135,21 +166,21 @@ func ParseProto(content string) (*ProtoFile, error) {
 				// If this line opens a block (options follow), push rpc_options frame.
 				if opens > closes {
 					stack = append(stack, frame{
-						kind: "rpc_options", svcIdx: tf.svcIdx, rpcIdx: rpcIdx, pushDepth: depth,
+						kind: frameKindRPCOptions, svcIdx: tf.svcIdx, rpcIdx: rpcIdx, pushDepth: depth,
 					})
 				}
 			}
 
 		// ── Inside RPC options block (depth == 2) ──────────────────────────
-		case depth == 2 && tf != nil && tf.kind == "rpc_options":
+		case depth == 2 && tf != nil && tf.kind == frameKindRPCOptions:
 			if reHTTPOption.MatchString(line) {
 				stack = append(stack, frame{
-					kind: "http_option", svcIdx: tf.svcIdx, rpcIdx: tf.rpcIdx, pushDepth: depth,
+					kind: frameKindHTTPOption, svcIdx: tf.svcIdx, rpcIdx: tf.rpcIdx, pushDepth: depth,
 				})
 				// Also handle single-line option blocks: option (...) = { delete: "..." };
 				rpc := &pf.Services[tf.svcIdx].RPCs[tf.rpcIdx]
 				if m := reHTTPMethodOpt.FindStringSubmatch(line); m != nil {
-					rpc.HTTPMethod = strings.ToUpper(m[1])
+					rpc.HTTPMethod = HTTPMethod(strings.ToUpper(m[1]))
 					rpc.HTTPPath = m[2]
 				}
 				if m := reBodyOpt.FindStringSubmatch(line); m != nil {
@@ -158,10 +189,10 @@ func ParseProto(content string) (*ProtoFile, error) {
 			}
 
 		// ── Inside google.api.http option block (depth == 3) ───────────────
-		case depth == 3 && tf != nil && tf.kind == "http_option":
+		case depth == 3 && tf != nil && tf.kind == frameKindHTTPOption:
 			rpc := &pf.Services[tf.svcIdx].RPCs[tf.rpcIdx]
 			if m := reHTTPMethodOpt.FindStringSubmatch(line); m != nil {
-				rpc.HTTPMethod = strings.ToUpper(m[1])
+				rpc.HTTPMethod = HTTPMethod(strings.ToUpper(m[1]))
 				rpc.HTTPPath = m[2]
 			}
 			if m := reBodyOpt.FindStringSubmatch(line); m != nil {
@@ -169,15 +200,15 @@ func ParseProto(content string) (*ProtoFile, error) {
 			}
 
 		// ── Inside a message (depth == 1) ──────────────────────────────────
-		case depth == 1 && tf != nil && tf.kind == "message":
+		case depth == 1 && tf != nil && tf.kind == frameKindMessage:
 			if m := reField.FindStringSubmatch(line); m != nil {
-				modifier := strings.TrimSpace(m[1])
+				modifier := protoModifier(strings.TrimSpace(m[1]))
 				fieldType := m[2]
 				fieldName := m[3]
 				fieldNum, _ := strconv.Atoi(m[4])
 
 				// skip proto keywords mistaken as type
-				if fieldType == "optional" || fieldType == "repeated" {
+				if protoModifier(fieldType) == modifierOptional || protoModifier(fieldType) == modifierRepeated {
 					continue
 				}
 
@@ -186,7 +217,7 @@ func ParseProto(content string) (*ProtoFile, error) {
 					Name:     fieldName,
 					Type:     fieldType,
 					Number:   fieldNum,
-					Repeated: modifier == "repeated",
+					Repeated: modifier == modifierRepeated,
 				})
 			}
 		}
@@ -210,7 +241,7 @@ func ParseProto(content string) (*ProtoFile, error) {
 // normalizeType converts well-known Google proto types to generator-friendly names.
 func normalizeType(t string) string {
 	switch t {
-	case "google.protobuf.Empty":
+	case protoTypeEmpty:
 		return "Empty"
 	default:
 		return t

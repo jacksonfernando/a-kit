@@ -11,7 +11,45 @@ import (
 	"text/template"
 )
 
-// GeneratorData is passed into every code template.
+// ─────────────────────────────────────────────────────────────────────────────
+// Constants
+// ─────────────────────────────────────────────────────────────────────────────
+
+// templateName identifies an embedded code-generation template file.
+type templateName string
+
+const (
+	tmplModels         templateName = "models.tmpl"
+	tmplInterface      templateName = "interface.tmpl"
+	tmplHandler        templateName = "handler.tmpl"
+	tmplHandlerTest    templateName = "handler_test.tmpl"
+	tmplService        templateName = "service.tmpl"
+	tmplServiceTest    templateName = "service_test.tmpl"
+	tmplRepository     templateName = "repository.tmpl"
+	tmplMockRepository templateName = "mock_repository.tmpl"
+	tmplMockService    templateName = "mock_service.tmpl"
+)
+
+// dirSegment is a directory path segment used when building generated file paths.
+type dirSegment string
+
+const (
+	dirModels     dirSegment = "models"
+	dirHandler    dirSegment = "handler"
+	dirHTTP       dirSegment = "http"
+	dirService    dirSegment = "service"
+	dirRepository dirSegment = "repository"
+	dirMySQL      dirSegment = "mysql"
+	dirMock       dirSegment = "_mock"
+	dirInternal   dirSegment = "internal"
+)
+
+const (
+	suffixRequest     = "Request"
+	fieldIDName       = "id"
+	goModPrefix       = "module "
+	dirPrefixInternal = "internal/"
+)
 type GeneratorData struct {
 	ModuleName       string    // e.g. "example"
 	ModulePath       string    // Go module path, e.g. "github.com/user/my-service"
@@ -27,15 +65,15 @@ type GeneratorData struct {
 
 // RPCInfo carries all derived information about one RPC.
 type RPCInfo struct {
-	Name         string      // "CreateExample"
-	RequestType  string      // "CreateExampleRequest"
-	ResponseType string      // "CreateExampleResponse" or "Example"
-	HTTPMethod   string      // "POST"
-	HTTPPath     string      // "/v1/examples"  (full path, Echo-compatible)
-	HasPathID    bool        // true → at least one path parameter exists
+	Name         string     // "CreateExample"
+	RequestType  string     // "CreateExampleRequest"
+	ResponseType string     // "CreateExampleResponse" or "Example"
+	HTTPMethod   HTTPMethod // "POST"
+	HTTPPath     string     // "/v1/examples"  (full path, Echo-compatible)
+	HasPathID    bool       // true → at least one path parameter exists
 	PathParams   []PathParam // named path parameters for handler binding
-	NeedsBody    bool        // true → method sends a body (POST/PUT/PATCH)
-	ReceiverName string      // lowercase first word, e.g. "h"
+	NeedsBody    bool       // true → method sends a body (POST/PUT/PATCH)
+	ReceiverName string     // lowercase first word, e.g. "h"
 
 	// Test data — populated during code generation
 	TestURL         string   // URL with :params replaced, e.g. "/v1/examples/test-name"
@@ -76,10 +114,10 @@ type FieldInfo struct {
 //go:embed templates
 var protoTmplFS embed.FS
 
-func mustProtoTmpl(name string) string {
-	b, err := protoTmplFS.ReadFile("templates/" + name)
+func mustProtoTmpl(name templateName) string {
+	b, err := protoTmplFS.ReadFile("templates/" + string(name))
 	if err != nil {
-		panic("a-kit: missing template " + name + ": " + err.Error())
+		panic("a-kit: missing template " + string(name) + ": " + err.Error())
 	}
 	return string(b)
 }
@@ -110,21 +148,21 @@ func GenerateModule(pf *ProtoFile, moduleName, modulePath, projectDir string) er
 	if len(external.RPCs) == 0 {
 		modelData = internal
 	}
-	if err := writeFile(projectDir, filepath.Join("models", moduleName+"_dto.go"), mustProtoTmpl("models.tmpl"), modelData, funcMap); err != nil {
+	if err := writeFile(projectDir, filepath.Join(string(dirModels), moduleName+"_dto.go"), mustProtoTmpl(tmplModels), modelData, funcMap); err != nil {
 		return err
 	}
 
 	// External module files
 	if len(external.RPCs) > 0 {
 		extFiles := map[string]string{
-			filepath.Join(moduleName, "interface.go"):                                     mustProtoTmpl("interface.tmpl"),
-			filepath.Join(moduleName, "handler", "http", moduleName+"_handler.go"):        mustProtoTmpl("handler.tmpl"),
-			filepath.Join(moduleName, "service", moduleName+"_service.go"):                mustProtoTmpl("service.tmpl"),
-			filepath.Join(moduleName, "repository", "mysql", moduleName+"_repository.go"): mustProtoTmpl("repository.tmpl"),
-			filepath.Join(moduleName, "_mock", moduleName+"_repository_mock.go"):          mustProtoTmpl("mock_repository.tmpl"),
-			filepath.Join(moduleName, "_mock", moduleName+"_service_mock.go"):             mustProtoTmpl("mock_service.tmpl"),
-			filepath.Join(moduleName, "handler", "http", moduleName+"_handler_test.go"):   mustProtoTmpl("handler_test.tmpl"),
-			filepath.Join(moduleName, "service", moduleName+"_service_test.go"):           mustProtoTmpl("service_test.tmpl"),
+			filepath.Join(moduleName, "interface.go"): mustProtoTmpl(tmplInterface),
+			filepath.Join(moduleName, string(dirHandler), string(dirHTTP), moduleName+"_handler.go"):      mustProtoTmpl(tmplHandler),
+			filepath.Join(moduleName, string(dirService), moduleName+"_service.go"):                       mustProtoTmpl(tmplService),
+			filepath.Join(moduleName, string(dirRepository), string(dirMySQL), moduleName+"_repository.go"): mustProtoTmpl(tmplRepository),
+			filepath.Join(moduleName, string(dirMock), moduleName+"_repository_mock.go"):                  mustProtoTmpl(tmplMockRepository),
+			filepath.Join(moduleName, string(dirMock), moduleName+"_service_mock.go"):                     mustProtoTmpl(tmplMockService),
+			filepath.Join(moduleName, string(dirHandler), string(dirHTTP), moduleName+"_handler_test.go"): mustProtoTmpl(tmplHandlerTest),
+			filepath.Join(moduleName, string(dirService), moduleName+"_service_test.go"):                  mustProtoTmpl(tmplServiceTest),
 		}
 		for relPath, tmplStr := range extFiles {
 			if err := writeFile(projectDir, relPath, tmplStr, external, funcMap); err != nil {
@@ -135,13 +173,13 @@ func GenerateModule(pf *ProtoFile, moduleName, modulePath, projectDir string) er
 
 	// Internal module files (no HTTP handler)
 	if len(internal.RPCs) > 0 {
-		intBase := filepath.Join("internal", moduleName)
+		intBase := filepath.Join(string(dirInternal), moduleName)
 		intFiles := map[string]string{
-			filepath.Join(intBase, "interface.go"):                                     mustProtoTmpl("interface.tmpl"),
-			filepath.Join(intBase, "service", moduleName+"_service.go"):                mustProtoTmpl("service.tmpl"),
-			filepath.Join(intBase, "repository", "mysql", moduleName+"_repository.go"): mustProtoTmpl("repository.tmpl"),
-			filepath.Join(intBase, "_mock", moduleName+"_repository_mock.go"):          mustProtoTmpl("mock_repository.tmpl"),
-			filepath.Join(intBase, "_mock", moduleName+"_service_mock.go"):             mustProtoTmpl("mock_service.tmpl"),
+			filepath.Join(intBase, "interface.go"): mustProtoTmpl(tmplInterface),
+			filepath.Join(intBase, string(dirService), moduleName+"_service.go"):                       mustProtoTmpl(tmplService),
+			filepath.Join(intBase, string(dirRepository), string(dirMySQL), moduleName+"_repository.go"): mustProtoTmpl(tmplRepository),
+			filepath.Join(intBase, string(dirMock), moduleName+"_repository_mock.go"):                  mustProtoTmpl(tmplMockRepository),
+			filepath.Join(intBase, string(dirMock), moduleName+"_service_mock.go"):                     mustProtoTmpl(tmplMockService),
 		}
 		for relPath, tmplStr := range intFiles {
 			if err := writeFile(projectDir, relPath, tmplStr, internal, funcMap); err != nil {
@@ -181,8 +219,8 @@ func ReadModuleName(projectDir string) (string, error) {
 		return "", err
 	}
 	for _, line := range strings.Split(string(data), "\n") {
-		if strings.HasPrefix(line, "module ") {
-			return strings.TrimSpace(strings.TrimPrefix(line, "module ")), nil
+		if strings.HasPrefix(line, goModPrefix) {
+			return strings.TrimSpace(strings.TrimPrefix(line, goModPrefix)), nil
 		}
 	}
 	return "", fmt.Errorf("module declaration not found in go.mod")
@@ -204,7 +242,8 @@ func buildGeneratorDataPair(pf *ProtoFile, svc ServiceDef, moduleName, modulePat
 			needsEmpty = true
 		}
 
-		var method, echoPath string
+		var method HTTPMethod
+		var echoPath string
 		var pathParams []PathParam
 
 		method = r.HTTPMethod
@@ -234,7 +273,7 @@ func buildGeneratorDataPair(pf *ProtoFile, svc ServiceDef, moduleName, modulePat
 			HTTPPath:     echoPath,
 			HasPathID:    len(pathParams) > 0,
 			PathParams:   pathParams,
-			NeedsBody:    method == "POST" || method == "PUT" || method == "PATCH",
+			NeedsBody:    method == HTTPMethodPOST || method == HTTPMethodPUT || method == HTTPMethodPATCH,
 		}
 
 		// populate test data
@@ -272,8 +311,8 @@ func buildGeneratorDataPair(pf *ProtoFile, svc ServiceDef, moduleName, modulePat
 
 	internal = base
 	internal.RPCs = intRPCs
-	internal.DirPrefix = "internal/"
-	internal.ModuleImportPath = modulePath + "/internal/" + toPackageName(moduleName)
+	internal.DirPrefix = dirPrefixInternal
+	internal.ModuleImportPath = modulePath + "/" + dirPrefixInternal + toPackageName(moduleName)
 
 	for _, r := range external.RPCs {
 		if r.NeedsBody {
@@ -294,7 +333,7 @@ func buildGeneratorDataPair(pf *ProtoFile, svc ServiceDef, moduleName, modulePat
 func buildMessages(pf *ProtoFile) []MsgInfo {
 	msgs := make([]MsgInfo, 0, len(pf.Messages))
 	for _, m := range pf.Messages {
-		isReq := strings.HasSuffix(m.Name, "Request")
+		isReq := strings.HasSuffix(m.Name, suffixRequest)
 		fields := make([]FieldInfo, 0, len(m.Fields))
 		for _, f := range m.Fields {
 			fi := FieldInfo{
@@ -303,7 +342,7 @@ func buildMessages(pf *ProtoFile) []MsgInfo {
 				GoType:    protoTypeToGo(f.Type, f.Repeated),
 				JSONTag:   f.Name,
 				QueryTag:  f.Name,
-				IsID:      f.Name == "id",
+				IsID:      f.Name == fieldIDName,
 				Repeated:  f.Repeated,
 			}
 			if isReq {
@@ -325,23 +364,23 @@ func buildMessages(pf *ProtoFile) []MsgInfo {
 }
 
 // inferRoute derives HTTP method, path (full, Echo-compatible), and path params from the RPC name.
-func inferRoute(rpcName, moduleName string) (method, path string, pathParams []PathParam) {
+func inferRoute(rpcName, moduleName string) (method HTTPMethod, path string, pathParams []PathParam) {
 	lower := strings.ToLower(rpcName)
 	plural := "/v1/" + strings.ToLower(moduleName) + "s"
 
 	switch {
 	case strings.HasPrefix(lower, "create"):
-		return "POST", plural, nil
+		return HTTPMethodPOST, plural, nil
 	case strings.HasPrefix(lower, "list"):
-		return "GET", plural, nil
+		return HTTPMethodGET, plural, nil
 	case strings.HasPrefix(lower, "get"):
-		return "GET", plural + "/:id", []PathParam{pathParamFromName("id")}
+		return HTTPMethodGET, plural + "/:id", []PathParam{pathParamFromName("id")}
 	case strings.HasPrefix(lower, "update"):
-		return "PATCH", plural + "/:id", []PathParam{pathParamFromName("id")}
+		return HTTPMethodPATCH, plural + "/:id", []PathParam{pathParamFromName("id")}
 	case strings.HasPrefix(lower, "delete"):
-		return "DELETE", plural + "/:id", []PathParam{pathParamFromName("id")}
+		return HTTPMethodDELETE, plural + "/:id", []PathParam{pathParamFromName("id")}
 	default:
-		return "POST", "/v1/" + strings.ToLower(rpcName), nil
+		return HTTPMethodPOST, "/v1/" + strings.ToLower(rpcName), nil
 	}
 }
 
@@ -477,8 +516,8 @@ func buildMsgMap(msgs []MsgInfo) map[string]MsgInfo {
 }
 
 // expectedHTTPStatus returns 201 for POST, 200 for everything else.
-func expectedHTTPStatus(method string) int {
-	if method == "POST" {
+func expectedHTTPStatus(method HTTPMethod) int {
+	if method == HTTPMethodPOST {
 		return 201
 	}
 	return 200

@@ -10,6 +10,13 @@ import (
 	"github.com/jacksonfernando/a-kit/internal/proto"
 )
 
+const (
+	exampleModuleName = "example"
+	exampleProtoFile  = "example.proto"
+	apiDirName        = "api"
+	gitkeepFile       = ".gitkeep"
+)
+
 // Options holds the configuration for scaffolding a new project.
 type Options struct {
 	ProjectName string // e.g. "my-service"
@@ -70,7 +77,7 @@ func Generate(opts Options) error {
 			return fmt.Errorf("creating directory %s: %w", dir, err)
 		}
 		// add a .gitkeep so the directory is tracked by git
-		gitkeep := filepath.Join(fullPath, ".gitkeep")
+		gitkeep := filepath.Join(fullPath, gitkeepFile)
 		if err := os.WriteFile(gitkeep, []byte{}, 0644); err != nil {
 			return fmt.Errorf("writing .gitkeep in %s: %w", dir, err)
 		}
@@ -88,7 +95,7 @@ func Generate(opts Options) error {
 // generateExampleModule parses the newly written api/example.proto and generates
 // all module files using the same code generator as `a-kit generate`.
 func generateExampleModule(projectDir, modulePath string) error {
-	protoPath := filepath.Join(projectDir, "api", "example.proto")
+	protoPath := filepath.Join(projectDir, apiDirName, exampleProtoFile)
 	content, err := os.ReadFile(protoPath)
 	if err != nil {
 		return err
@@ -97,7 +104,7 @@ func generateExampleModule(projectDir, modulePath string) error {
 	if err != nil {
 		return err
 	}
-	return proto.GenerateModule(pf, "example", modulePath, projectDir)
+	return proto.GenerateModule(pf, exampleModuleName, modulePath, projectDir)
 }
 
 func renderTemplate(tmplStr string, data templateData) (string, error) {
