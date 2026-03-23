@@ -1,5 +1,3 @@
-# a-kit
-
 ```
   ██████╗       ██╗  ██╗██╗████████╗
   ██╔══██╗      ██║ ██╔╝██║╚══██╔══╝
@@ -8,7 +6,6 @@
   ██║  ██║      ██║  ██╗██║   ██║
   ╚═╝  ╚═╝      ╚═╝  ╚═╝╚═╝   ╚═╝
 
-  Go project scaffolding CLI
 ```
 
 A Go project scaffolding CLI that generates clean-architecture Go services from protobuf definitions. No `protoc` required.
