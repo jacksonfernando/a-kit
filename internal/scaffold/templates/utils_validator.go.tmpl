@@ -1,0 +1,22 @@
+package validator
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/go-playground/validator/v10"
+)
+
+var validate = validator.New()
+
+// ValidateStruct validates a struct using its validate tags.
+func ValidateStruct(s interface{}) error {
+	if err := validate.Struct(s); err != nil {
+		var errs []string
+		for _, e := range err.(validator.ValidationErrors) {
+			errs = append(errs, fmt.Sprintf("field %s failed on '%s' rule", e.Field(), e.Tag()))
+		}
+		return fmt.Errorf("%s", strings.Join(errs, "; "))
+	}
+	return nil
+}

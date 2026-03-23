@@ -1,0 +1,53 @@
+package main
+
+import (
+	"fmt"
+	"net/http"
+
+	exampleHTTPHandler "{{.ModuleName}}/example/handler/http"
+	exampleRepository "{{.ModuleName}}/example/repository/mysql"
+	exampleService "{{.ModuleName}}/example/service"
+
+	"{{.ModuleName}}/global"
+	"{{.ModuleName}}/middlewares"
+	appconfig "{{.ModuleName}}/utils/config"
+
+	"github.com/labstack/echo/v4"
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
+)
+
+func main() {
+	var configuration global.Configuration
+	if err := appconfig.Load(&configuration); err != nil {
+		panic(fmt.Sprintf("failed to load configuration: %v", err))
+	}
+
+	dsn := fmt.Sprintf(
+		"%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+		configuration.DbUser,
+		configuration.DbPass,
+		configuration.DbHost,
+		configuration.DbPort,
+		configuration.DbName,
+	)
+	mysqlDb, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	if err != nil {
+		panic("Error connecting to database")
+	}
+
+	e := echo.New()
+	mw := middlewares.InitMiddleware([]byte(configuration.PrivateJWTAccessTokenSecret))
+	e.Use(mw.ValidateCORS)
+
+	e.GET("/health", func(c echo.Context) error {
+		return c.JSON(http.StatusOK, map[string]interface{}{"message": "{{.ProjectName}} is live"})
+	})
+
+	// Initialize example module
+	exampleRepo := exampleRepository.NewExampleServiceMySQLRepository(mysqlDb)
+	exampleSvc := exampleService.NewExampleService(exampleRepo)
+	exampleHTTPHandler.NewExampleServiceHandler(e, exampleSvc, mw)
+
+	e.Logger.Fatal(e.Start(fmt.Sprintf(":%s", configuration.HostPort)))
+}

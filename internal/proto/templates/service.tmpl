@@ -1,0 +1,27 @@
+package service
+
+import (
+	"context"
+	"fmt"
+
+	{{.PackageName}} "{{.ModuleImportPath}}"
+	"{{.ModulePath}}/models"
+)
+
+type {{lowerFirst .ServiceName}} struct {
+	repo {{.PackageName}}.{{.ServiceName}}RepositoryInterface
+}
+
+// New{{.ServiceName}} creates a new {{.PackageName}} service.
+func New{{.ServiceName}}(repo {{.PackageName}}.{{.ServiceName}}RepositoryInterface) {{.PackageName}}.{{.ServiceName}}Interface {
+	return &{{lowerFirst .ServiceName}}{repo: repo}
+}
+{{range .RPCs}}
+func (s *{{lowerFirst $.ServiceName}}) {{.Name}}(ctx context.Context, req *models.{{.RequestType}}) (*models.{{.ResponseType}}, error) {
+	resp, err := s.repo.{{.Name}}(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("{{.Name}}: %w", err)
+	}
+	return resp, nil
+}
+{{end}}

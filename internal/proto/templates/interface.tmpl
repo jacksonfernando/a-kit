@@ -1,0 +1,21 @@
+package {{.PackageName}}
+
+import (
+	"context"
+
+	"{{.ModulePath}}/models"
+)
+
+// {{.ServiceName}}RepositoryInterface defines data-access operations.
+type {{.ServiceName}}RepositoryInterface interface {
+{{- range .RPCs}}
+	{{.Name}}(ctx context.Context, req *models.{{.RequestType}}) (*models.{{.ResponseType}}, error)
+{{- end}}
+}
+
+// {{.ServiceName}}Interface defines business-logic operations.
+type {{.ServiceName}}Interface interface {
+{{- range .RPCs}}
+	{{.Name}}(ctx context.Context, req *models.{{.RequestType}}) (*models.{{.ResponseType}}, error)
+{{- end}}
+}

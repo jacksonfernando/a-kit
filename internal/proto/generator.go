@@ -2,6 +2,7 @@ package proto
 
 import (
 	"bytes"
+	"embed"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -72,9 +73,18 @@ type FieldInfo struct {
 	Repeated    bool   // true if the field is a slice (repeated in proto)
 }
 
+//go:embed templates
+var protoTmplFS embed.FS
+
+func mustProtoTmpl(name string) string {
+	b, err := protoTmplFS.ReadFile("templates/" + name)
+	if err != nil {
+		panic("a-kit: missing template " + name + ": " + err.Error())
+	}
+	return string(b)
+}
+
 // GenerateModule generates all Go files for a module inside projectDir.
-// RPCs without the Internal keyword go into <module>/ (with HTTP handler).
-// RPCs marked Internal go into internal/<module>/ (no HTTP handler).
 func GenerateModule(pf *ProtoFile, moduleName, modulePath, projectDir string) error {
 	if len(pf.Services) == 0 {
 		return fmt.Errorf("no service defined in proto file")
@@ -100,21 +110,21 @@ func GenerateModule(pf *ProtoFile, moduleName, modulePath, projectDir string) er
 	if len(external.RPCs) == 0 {
 		modelData = internal
 	}
-	if err := writeFile(projectDir, filepath.Join("models", moduleName+"_dto.go"), tmplModels, modelData, funcMap); err != nil {
+	if err := writeFile(projectDir, filepath.Join("models", moduleName+"_dto.go"), mustProtoTmpl("models.tmpl"), modelData, funcMap); err != nil {
 		return err
 	}
 
 	// External module files
 	if len(external.RPCs) > 0 {
 		extFiles := map[string]string{
-			filepath.Join(moduleName, "interface.go"):                                     tmplInterface,
-			filepath.Join(moduleName, "handler", "http", moduleName+"_handler.go"):        tmplHandler,
-			filepath.Join(moduleName, "service", moduleName+"_service.go"):                tmplService,
-			filepath.Join(moduleName, "repository", "mysql", moduleName+"_repository.go"): tmplRepository,
-			filepath.Join(moduleName, "_mock", moduleName+"_repository_mock.go"):          tmplMockRepo,
-			filepath.Join(moduleName, "_mock", moduleName+"_service_mock.go"):             tmplMockService,
-			filepath.Join(moduleName, "handler", "http", moduleName+"_handler_test.go"):   tmplHandlerTest,
-			filepath.Join(moduleName, "service", moduleName+"_service_test.go"):           tmplServiceTest,
+			filepath.Join(moduleName, "interface.go"):                                     mustProtoTmpl("interface.tmpl"),
+			filepath.Join(moduleName, "handler", "http", moduleName+"_handler.go"):        mustProtoTmpl("handler.tmpl"),
+			filepath.Join(moduleName, "service", moduleName+"_service.go"):                mustProtoTmpl("service.tmpl"),
+			filepath.Join(moduleName, "repository", "mysql", moduleName+"_repository.go"): mustProtoTmpl("repository.tmpl"),
+			filepath.Join(moduleName, "_mock", moduleName+"_repository_mock.go"):          mustProtoTmpl("mock_repository.tmpl"),
+			filepath.Join(moduleName, "_mock", moduleName+"_service_mock.go"):             mustProtoTmpl("mock_service.tmpl"),
+			filepath.Join(moduleName, "handler", "http", moduleName+"_handler_test.go"):   mustProtoTmpl("handler_test.tmpl"),
+			filepath.Join(moduleName, "service", moduleName+"_service_test.go"):           mustProtoTmpl("service_test.tmpl"),
 		}
 		for relPath, tmplStr := range extFiles {
 			if err := writeFile(projectDir, relPath, tmplStr, external, funcMap); err != nil {
@@ -127,11 +137,11 @@ func GenerateModule(pf *ProtoFile, moduleName, modulePath, projectDir string) er
 	if len(internal.RPCs) > 0 {
 		intBase := filepath.Join("internal", moduleName)
 		intFiles := map[string]string{
-			filepath.Join(intBase, "interface.go"):                                     tmplInterface,
-			filepath.Join(intBase, "service", moduleName+"_service.go"):                tmplService,
-			filepath.Join(intBase, "repository", "mysql", moduleName+"_repository.go"): tmplRepository,
-			filepath.Join(intBase, "_mock", moduleName+"_repository_mock.go"):          tmplMockRepo,
-			filepath.Join(intBase, "_mock", moduleName+"_service_mock.go"):             tmplMockService,
+			filepath.Join(intBase, "interface.go"):                                     mustProtoTmpl("interface.tmpl"),
+			filepath.Join(intBase, "service", moduleName+"_service.go"):                mustProtoTmpl("service.tmpl"),
+			filepath.Join(intBase, "repository", "mysql", moduleName+"_repository.go"): mustProtoTmpl("repository.tmpl"),
+			filepath.Join(intBase, "_mock", moduleName+"_repository_mock.go"):          mustProtoTmpl("mock_repository.tmpl"),
+			filepath.Join(intBase, "_mock", moduleName+"_service_mock.go"):             mustProtoTmpl("mock_service.tmpl"),
 		}
 		for relPath, tmplStr := range intFiles {
 			if err := writeFile(projectDir, relPath, tmplStr, internal, funcMap); err != nil {
@@ -629,287 +639,3 @@ func protoTypeToGo(protoType string, repeated bool) string {
 	}
 	return goType
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Code templates
-// ─────────────────────────────────────────────────────────────────────────────
-
-var tmplModels = `// Code generated by a-kit. DO NOT EDIT.
-package models
-{{if .NeedsEmpty}}
-// Empty represents an absent response body (mapped from google.protobuf.Empty).
-type Empty struct{}
-{{end}}
-{{range .Messages}}
-type {{.Name}} struct {
-{{- range .Fields}}
-	{{.GoName}} {{.GoType}} ` + "`" + `json:"{{.JSONTag}}" query:"{{.QueryTag}}"{{if .ValidateTag}} validate:"{{.ValidateTag}}"{{end}}` + "`" + `
-{{- end}}
-}
-{{end}}`
-
-var tmplInterface = `package {{.PackageName}}
-
-import (
-	"context"
-
-	"{{.ModulePath}}/models"
-)
-
-// {{.ServiceName}}RepositoryInterface defines data-access operations.
-type {{.ServiceName}}RepositoryInterface interface {
-{{- range .RPCs}}
-	{{.Name}}(ctx context.Context, req *models.{{.RequestType}}) (*models.{{.ResponseType}}, error)
-{{- end}}
-}
-
-// {{.ServiceName}}Interface defines business-logic operations.
-type {{.ServiceName}}Interface interface {
-{{- range .RPCs}}
-	{{.Name}}(ctx context.Context, req *models.{{.RequestType}}) (*models.{{.ResponseType}}, error)
-{{- end}}
-}
-`
-
-var tmplHandler = `package http
-
-import (
-	"net/http"
-
-	{{.PackageName}} "{{.ModuleImportPath}}"
-	"{{.ModulePath}}/global"
-	"{{.ModulePath}}/middlewares"
-	"{{.ModulePath}}/models"
-	"{{.ModulePath}}/utils/validator"
-
-	"github.com/labstack/echo/v4"
-)
-
-type {{.ServiceName}}Handler struct {
-	svc {{.PackageName}}.{{.ServiceName}}Interface
-	mw  middlewares.GoMiddlewareInterface
-}
-
-// New{{.ServiceName}}Handler registers all HTTP routes for the {{.PackageName}} module.
-func New{{.ServiceName}}Handler(e *echo.Echo, svc {{.PackageName}}.{{.ServiceName}}Interface, mw middlewares.GoMiddlewareInterface) {
-	h := &{{.ServiceName}}Handler{svc: svc, mw: mw}
-{{- range .RPCs}}
-	e.{{.HTTPMethod}}("{{.HTTPPath}}", h.{{.Name}})
-{{- end}}
-}
-{{range .RPCs}}
-func (h *{{$.ServiceName}}Handler) {{.Name}}(c echo.Context) error {
-	var req models.{{.RequestType}}
-
-	// Bind query params (GET) or request body (POST/PUT/PATCH).
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, global.BadResponse{Code: http.StatusBadRequest, Message: "invalid request"})
-	}
-{{- range .PathParams}}
-{{- if .Nested}}
-	// TODO: bind path param ":{{.EchoParam}}" to nested field {{.FieldPath}}
-{{- else}}
-	req.{{.GoField}} = c.Param("{{.EchoParam}}")
-{{- end}}
-{{- end}}
-{{- if .NeedsBody}}
-	if err := validator.ValidateStruct(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, global.BadResponse{Code: http.StatusBadRequest, Message: err.Error()})
-	}
-{{- end}}
-	resp, err := h.svc.{{.Name}}(c.Request().Context(), &req)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, global.BadResponse{Code: http.StatusInternalServerError, Message: err.Error()})
-	}
-{{- if eq .HTTPMethod "POST"}}
-	return c.JSON(http.StatusCreated, global.SuccessResponse{Code: http.StatusCreated, Message: "created", Data: resp})
-{{- else if eq .HTTPMethod "DELETE"}}
-	return c.JSON(http.StatusOK, global.SuccessResponse{Code: http.StatusOK, Message: "deleted", Data: resp})
-{{- else}}
-	return c.JSON(http.StatusOK, global.SuccessResponse{Code: http.StatusOK, Message: "ok", Data: resp})
-{{- end}}
-}
-{{end}}`
-
-var tmplService = `package service
-
-import (
-	"context"
-	"fmt"
-
-	{{.PackageName}} "{{.ModuleImportPath}}"
-	"{{.ModulePath}}/models"
-)
-
-type {{lowerFirst .ServiceName}} struct {
-	repo {{.PackageName}}.{{.ServiceName}}RepositoryInterface
-}
-
-// New{{.ServiceName}} creates a new {{.PackageName}} service.
-func New{{.ServiceName}}(repo {{.PackageName}}.{{.ServiceName}}RepositoryInterface) {{.PackageName}}.{{.ServiceName}}Interface {
-	return &{{lowerFirst .ServiceName}}{repo: repo}
-}
-{{range .RPCs}}
-func (s *{{lowerFirst $.ServiceName}}) {{.Name}}(ctx context.Context, req *models.{{.RequestType}}) (*models.{{.ResponseType}}, error) {
-	resp, err := s.repo.{{.Name}}(ctx, req)
-	if err != nil {
-		return nil, fmt.Errorf("{{.Name}}: %w", err)
-	}
-	return resp, nil
-}
-{{end}}`
-
-var tmplRepository = `package mysql
-
-import (
-	"context"
-	"fmt"
-
-	{{.PackageName}} "{{.ModuleImportPath}}"
-	"{{.ModulePath}}/models"
-
-	"gorm.io/gorm"
-)
-
-type {{lowerFirst .ServiceName}}Repository struct {
-	db *gorm.DB
-}
-
-// New{{.ServiceName}}MySQLRepository creates a new {{.PackageName}} MySQL repository.
-func New{{.ServiceName}}MySQLRepository(db *gorm.DB) {{.PackageName}}.{{.ServiceName}}RepositoryInterface {
-	return &{{lowerFirst .ServiceName}}Repository{db: db}
-}
-{{range .RPCs}}
-func (r *{{lowerFirst $.ServiceName}}Repository) {{.Name}}(ctx context.Context, req *models.{{.RequestType}}) (*models.{{.ResponseType}}, error) {
-	// TODO: implement database logic
-	return nil, fmt.Errorf("{{.Name}}: not implemented")
-}
-{{end}}`
-
-var tmplMockRepo = `package mock
-
-import (
-	"context"
-
-	"{{.ModulePath}}/models"
-
-	"github.com/stretchr/testify/mock"
-)
-
-// Mock{{.ServiceName}}Repository is a testify mock for {{.ServiceName}}RepositoryInterface.
-type Mock{{.ServiceName}}Repository struct {
-	mock.Mock
-}
-{{range .RPCs}}
-func (m *Mock{{$.ServiceName}}Repository) {{.Name}}(ctx context.Context, req *models.{{.RequestType}}) (*models.{{.ResponseType}}, error) {
-	args := m.Called(ctx, req)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*models.{{.ResponseType}}), args.Error(1)
-}
-{{end}}`
-
-var tmplMockService = `package mock
-
-import (
-	"context"
-
-	"{{.ModulePath}}/models"
-
-	"github.com/stretchr/testify/mock"
-)
-
-// Mock{{.ServiceName}} is a testify mock for {{.ServiceName}}Interface.
-type Mock{{.ServiceName}} struct {
-	mock.Mock
-}
-{{range .RPCs}}
-func (m *Mock{{$.ServiceName}}) {{.Name}}(ctx context.Context, req *models.{{.RequestType}}) (*models.{{.ResponseType}}, error) {
-	args := m.Called(ctx, req)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*models.{{.ResponseType}}), args.Error(1)
-}
-{{end}}`
-
-var tmplHandlerTest = `// Code generated by a-kit. DO NOT EDIT.
-package http
-
-import (
-	nethttp "net/http"
-	"net/http/httptest"
-	{{- if .HasBodyRPCs}}
-	"strings"
-	{{- end}}
-	"testing"
-
-	"github.com/labstack/echo/v4"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
-
-	"{{.ModulePath}}/models"
-	mockpkg "{{.ModulePath}}/{{.PackageName}}/_mock"
-)
-{{range .RPCs}}
-func Test{{$.ServiceName}}Handler_{{.Name}}(t *testing.T) {
-	e := echo.New()
-	mockSvc := &mockpkg.Mock{{$.ServiceName}}{}
-	h := &{{$.ServiceName}}Handler{svc: mockSvc}
-
-	mockSvc.On("{{.Name}}", mock.Anything, mock.AnythingOfType("*models.{{.RequestType}}")).
-		Return(&models.{{.ResponseType}}{}, nil)
-
-	{{- if .NeedsBody}}
-	body := ` + "`" + `{{.TestBody}}` + "`" + `
-	req := httptest.NewRequest(nethttp.Method{{methodTitle .HTTPMethod}}, "{{.TestURL}}", strings.NewReader(body))
-	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
-	{{- else}}
-	req := httptest.NewRequest(nethttp.Method{{methodTitle .HTTPMethod}}, "{{.TestURL}}{{.TestQueryString}}", nil)
-	{{- end}}
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
-	{{- if .TestParamNames}}
-	c.SetParamNames({{range $i, $n := .TestParamNames}}{{if $i}}, {{end}}"{{$n}}"{{end}})
-	c.SetParamValues({{range $i, $v := .TestParamValues}}{{if $i}}, {{end}}"{{$v}}"{{end}})
-	{{- end}}
-
-	err := h.{{.Name}}(c)
-	assert.NoError(t, err)
-	assert.Equal(t, {{.ExpectedStatus}}, rec.Code)
-	mockSvc.AssertExpectations(t)
-}
-{{end}}`
-
-var tmplServiceTest = `// Code generated by a-kit. DO NOT EDIT.
-package service_test
-
-import (
-	"context"
-	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
-
-	"{{.ModulePath}}/models"
-	mockpkg "{{.ModulePath}}/{{.PackageName}}/_mock"
-	svcpkg "{{.ModulePath}}/{{.PackageName}}/service"
-)
-{{range .RPCs}}
-func Test{{$.ServiceName}}_{{.Name}}(t *testing.T) {
-	mockRepo := &mockpkg.Mock{{$.ServiceName}}Repository{}
-	svc := svcpkg.New{{$.ServiceName}}(mockRepo)
-
-	req := &models.{{.RequestType}}{}
-	expected := &models.{{.ResponseType}}{}
-
-	mockRepo.On("{{.Name}}", mock.Anything, mock.AnythingOfType("*models.{{.RequestType}}")).
-		Return(expected, nil)
-
-	resp, err := svc.{{.Name}}(context.Background(), req)
-	assert.NoError(t, err)
-	assert.Equal(t, expected, resp)
-	mockRepo.AssertExpectations(t)
-}
-{{end}}`

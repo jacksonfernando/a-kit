@@ -1,0 +1,25 @@
+package global
+
+import "time"
+
+type PostgresDefault struct {
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
+	DeletedAt time.Time `json:"deleted_at,omitempty"`
+	UpdatedBy string    `json:"updated_by,omitempty"`
+	DeletedBy string    `json:"deleted_by,omitempty"`
+}
+
+type ResponseError struct {
+	Message string `json:"message"`
+}
+
+type ResponseSuccess struct {
+	Message string `json:"message"`
+}
+
+type TokenResponse struct {
+	AccessToken  string    `json:"access_token"`
+	RefreshToken string    `json:"refresh_token"`
+	ExpiredAt    time.Time `json:"expired_at"`
+}

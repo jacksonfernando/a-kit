@@ -1,0 +1,21 @@
+package global
+
+import "errors"
+
+var (
+	ErrInternalServer = errors.New("internal server error")
+	ErrNotFound       = errors.New("item not found")
+	ErrConflict       = errors.New("item already exists")
+	ErrBadInput       = errors.New("invalid input")
+)
+
+type BadResponse struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+type SuccessResponse struct {
+	Code    int         `json:"code"`
+	Message string      `json:"message"`
+	Data    interface{} `json:"data"`
+}

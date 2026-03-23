@@ -1,0 +1,59 @@
+package http
+
+import (
+	"net/http"
+
+	{{.PackageName}} "{{.ModuleImportPath}}"
+	"{{.ModulePath}}/global"
+	"{{.ModulePath}}/middlewares"
+	"{{.ModulePath}}/models"
+	"{{.ModulePath}}/utils/validator"
+
+	"github.com/labstack/echo/v4"
+)
+
+type {{.ServiceName}}Handler struct {
+	svc {{.PackageName}}.{{.ServiceName}}Interface
+	mw  middlewares.GoMiddlewareInterface
+}
+
+// New{{.ServiceName}}Handler registers all HTTP routes for the {{.PackageName}} module.
+func New{{.ServiceName}}Handler(e *echo.Echo, svc {{.PackageName}}.{{.ServiceName}}Interface, mw middlewares.GoMiddlewareInterface) {
+	h := &{{.ServiceName}}Handler{svc: svc, mw: mw}
+{{- range .RPCs}}
+	e.{{.HTTPMethod}}("{{.HTTPPath}}", h.{{.Name}})
+{{- end}}
+}
+{{range .RPCs}}
+func (h *{{$.ServiceName}}Handler) {{.Name}}(c echo.Context) error {
+	var req models.{{.RequestType}}
+
+	// Bind query params (GET) or request body (POST/PUT/PATCH).
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, global.BadResponse{Code: http.StatusBadRequest, Message: "invalid request"})
+	}
+{{- range .PathParams}}
+{{- if .Nested}}
+	// TODO: bind path param ":{{.EchoParam}}" to nested field {{.FieldPath}}
+{{- else}}
+	req.{{.GoField}} = c.Param("{{.EchoParam}}")
+{{- end}}
+{{- end}}
+{{- if .NeedsBody}}
+	if err := validator.ValidateStruct(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, global.BadResponse{Code: http.StatusBadRequest, Message: err.Error()})
+	}
+{{- end}}
+	resp, err := h.svc.{{.Name}}(c.Request().Context(), &req)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, global.BadResponse{Code: http.StatusInternalServerError, Message: err.Error()})
+	}
+{{- if eq .HTTPMethod "POST"}}
+	return c.JSON(http.StatusCreated, global.SuccessResponse{Code: http.StatusCreated, Message: "created", Data: resp})
+{{- else if eq .HTTPMethod "DELETE"}}
+	return c.JSON(http.StatusOK, global.SuccessResponse{Code: http.StatusOK, Message: "deleted", Data: resp})
+{{- else}}
+	return c.JSON(http.StatusOK, global.SuccessResponse{Code: http.StatusOK, Message: "ok", Data: resp})
+{{- end}}
+}
+{{end}}

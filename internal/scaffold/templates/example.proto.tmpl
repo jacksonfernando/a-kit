@@ -1,0 +1,130 @@
+syntax = "proto3";
+
+package example.v1;
+
+import "google/api/annotations.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/empty.proto";
+
+option go_package = "{{.ModuleName}}/api/example/v1;examplev1";
+
+// Example is the resource managed by ExampleService.
+message Example {
+  // Resource name, e.g. "examples/123".
+  string name        = 1;
+  string display_name = 2;
+  string description  = 3;
+}
+
+// ExampleService provides CRUD and custom operations on Example resources.
+service ExampleService {
+
+  // GetExample returns a single Example by resource name.
+  rpc GetExample(GetExampleRequest) returns (Example) {
+    option (google.api.http) = {
+      get: "/v1/{name=examples/*}"
+    };
+  }
+
+  // ListExamples returns a paginated list of Examples.
+  rpc ListExamples(ListExamplesRequest) returns (ListExamplesResponse) {
+    option (google.api.http) = {
+      get: "/v1/examples"
+    };
+  }
+
+  // CreateExample creates a new Example.
+  rpc CreateExample(CreateExampleRequest) returns (Example) {
+    option (google.api.http) = {
+      post: "/v1/examples"
+      body: "example"
+    };
+  }
+
+  // UpdateExample updates an Example (partial update via field_mask).
+  rpc UpdateExample(UpdateExampleRequest) returns (Example) {
+    option (google.api.http) = {
+      patch: "/v1/{example.name=examples/*}"
+      body: "example"
+    };
+  }
+
+  // DeleteExample deletes an Example.
+  rpc DeleteExample(DeleteExampleRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {
+      delete: "/v1/{name=examples/*}"
+    };
+  }
+
+  // SearchExamples is a custom method for full-text search.
+  rpc SearchExamples(SearchExamplesRequest) returns (SearchExamplesResponse) {
+    option (google.api.http) = {
+      post: "/v1/examples:search"
+      body: "*"
+    };
+  }
+
+  // RecalculateExample is an internal domain operation (no HTTP endpoint).
+  rpc RecalculateExample(RecalculateExampleRequest) returns (RecalculateExampleResponse) Internal;
+}
+
+// ── Standard request/response messages ────────────────────────────────────────
+
+message GetExampleRequest {
+  // Required. Resource name: "examples/{example}".
+  string name = 1;
+}
+
+message ListExamplesRequest {
+  int32  page_size  = 1;
+  string page_token = 2;
+  string filter     = 3;
+  string order_by   = 4;
+}
+
+message ListExamplesResponse {
+  repeated Example examples       = 1;
+  string           next_page_token = 2;
+  int32            total_size      = 3;
+}
+
+message CreateExampleRequest {
+  // The Example resource to create.
+  Example example = 1;
+}
+
+message UpdateExampleRequest {
+  // The Example resource with updated fields.
+  Example                  example     = 1;
+  // The set of fields to update.
+  google.protobuf.FieldMask update_mask = 2;
+}
+
+message DeleteExampleRequest {
+  // Required. Resource name: "examples/{example}".
+  string name = 1;
+}
+
+// ── Custom method messages ─────────────────────────────────────────────────────
+
+message SearchExamplesRequest {
+  string query      = 1;
+  int32  page_size  = 2;
+  string page_token = 3;
+}
+
+message SearchExamplesResponse {
+  repeated Example examples       = 1;
+  string           next_page_token = 2;
+  int32            total_size      = 3;
+}
+
+// ── Internal domain messages ───────────────────────────────────────────────────
+
+message RecalculateExampleRequest {
+  string name = 1;
+}
+
+message RecalculateExampleResponse {
+  bool success = 1;
+}

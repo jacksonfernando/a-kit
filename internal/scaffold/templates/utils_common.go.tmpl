@@ -1,0 +1,19 @@
+package common
+
+import "strings"
+
+// ToSnakeCase converts a camelCase string to snake_case.
+func ToSnakeCase(s string) string {
+	var result strings.Builder
+	for i, r := range s {
+		if r >= 'A' && r <= 'Z' {
+			if i > 0 {
+				result.WriteByte('_')
+			}
+			result.WriteRune(r + 32)
+		} else {
+			result.WriteRune(r)
+		}
+	}
+	return result.String()
+}

@@ -1,0 +1,14 @@
+package common
+
+import "github.com/google/uuid"
+
+// NewUUID generates a new UUID string.
+func NewUUID() string {
+	return uuid.New().String()
+}
+
+// IsValidUUID returns true if the given string is a valid UUID.
+func IsValidUUID(u string) bool {
+	_, err := uuid.Parse(u)
+	return err == nil
+}

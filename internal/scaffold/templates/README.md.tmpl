@@ -1,0 +1,40 @@
+# {{.ProjectName}}
+
+A Go service built with clean architecture.
+
+## Getting Started
+
+```bash
+cp .env.example .env   # configure your environment
+go mod tidy
+go run main.go
+```
+
+## Project Structure
+
+```
+{{.ProjectName}}/
+├── main.go
+├── global/          # shared config, errors, response types
+├── middlewares/     # echo middleware (CORS, JWT)
+├── models/          # shared DTOs and DB models
+├── utils/           # helpers: common, token, validator
+├── mysql/           # database migration scripts (sqitch)
+└── example/         # sample module — copy to add new features
+    ├── interface.go
+    ├── _mock/
+    ├── handler/http/
+    ├── repository/mysql/
+    └── service/
+```
+
+## Make Commands
+
+| Command | Description |
+|---------|-------------|
+| `make run` | Run the server |
+| `make build` | Build binary |
+| `make test` | Run all tests |
+| `make tidy` | Tidy Go modules |
+| `make docker-up` | Start with docker-compose |
+| `make docker-down` | Stop docker-compose |

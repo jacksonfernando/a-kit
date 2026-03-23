@@ -1,0 +1,26 @@
+package mysql
+
+import (
+	"context"
+	"fmt"
+
+	{{.PackageName}} "{{.ModuleImportPath}}"
+	"{{.ModulePath}}/models"
+
+	"gorm.io/gorm"
+)
+
+type {{lowerFirst .ServiceName}}Repository struct {
+	db *gorm.DB
+}
+
+// New{{.ServiceName}}MySQLRepository creates a new {{.PackageName}} MySQL repository.
+func New{{.ServiceName}}MySQLRepository(db *gorm.DB) {{.PackageName}}.{{.ServiceName}}RepositoryInterface {
+	return &{{lowerFirst .ServiceName}}Repository{db: db}
+}
+{{range .RPCs}}
+func (r *{{lowerFirst $.ServiceName}}Repository) {{.Name}}(ctx context.Context, req *models.{{.RequestType}}) (*models.{{.ResponseType}}, error) {
+	// TODO: implement database logic
+	return nil, fmt.Errorf("{{.Name}}: not implemented")
+}
+{{end}}

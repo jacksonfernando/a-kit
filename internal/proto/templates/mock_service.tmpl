@@ -1,0 +1,23 @@
+package mock
+
+import (
+	"context"
+
+	"{{.ModulePath}}/models"
+
+	"github.com/stretchr/testify/mock"
+)
+
+// Mock{{.ServiceName}} is a testify mock for {{.ServiceName}}Interface.
+type Mock{{.ServiceName}} struct {
+	mock.Mock
+}
+{{range .RPCs}}
+func (m *Mock{{$.ServiceName}}) {{.Name}}(ctx context.Context, req *models.{{.RequestType}}) (*models.{{.ResponseType}}, error) {
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.{{.ResponseType}}), args.Error(1)
+}
+{{end}}

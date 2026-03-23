@@ -1,0 +1,58 @@
+package config
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
+
+// envPattern matches {{`{{VAR_NAME}}`}} and {{`{{VAR_NAME:default_value}}`}} placeholders.
+var envPattern = regexp.MustCompile(`\{\{([A-Z0-9_]+)(?::([^}]*))?\}\}`)
+
+// Load reads the config file specified by the APP_CONFIG environment variable
+// (defaults to "config.yaml") and unmarshals it into out.
+// Placeholders of the form {{`{{VAR_NAME}}`}} or {{`{{VAR_NAME:default}}`}} are replaced
+// with the corresponding environment variable value before parsing.
+func Load(out interface{}) error {
+	path := os.Getenv("APP_CONFIG")
+	if path == "" {
+		path = "config.yaml"
+	}
+	return LoadFile(path, out)
+}
+
+// LoadFile reads the file at path, substitutes env var placeholders, and
+// unmarshals the result into out. Supported extensions: .yaml, .yml, .json.
+func LoadFile(path string, out interface{}) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("config: read %q: %w", path, err)
+	}
+	substituted := substitute(string(data))
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".yaml", ".yml":
+		return yaml.Unmarshal([]byte(substituted), out)
+	case ".json":
+		return json.Unmarshal([]byte(substituted), out)
+	default:
+		return fmt.Errorf("config: unsupported file extension %q (use .yaml, .yml, or .json)", filepath.Ext(path))
+	}
+}
+
+// substitute replaces all {{`{{VAR}}`}} and {{`{{VAR:default}}`}} placeholders in s with
+// the value of the named environment variable, falling back to the default.
+func substitute(s string) string {
+	return envPattern.ReplaceAllStringFunc(s, func(match string) string {
+		groups := envPattern.FindStringSubmatch(match)
+		varName, defaultVal := groups[1], groups[2]
+		if val := os.Getenv(varName); val != "" {
+			return val
+		}
+		return defaultVal
+	})
+}

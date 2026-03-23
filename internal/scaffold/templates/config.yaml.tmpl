@@ -1,0 +1,18 @@
+# Application configuration
+# Syntax: {{`{{VAR_NAME}}`}} injects the environment variable VAR_NAME.
+#         {{`{{VAR_NAME:default}}`}} falls back to "default" when the variable is unset.
+# Override which file is loaded by setting APP_CONFIG (e.g. APP_CONFIG=config/prod.yaml).
+
+host_url: "{{`{{HOST_URL:http://localhost}}`}}"
+host_port: "{{`{{APP_PORT:9000}}`}}"
+
+db_host: "{{`{{DB_HOST:localhost}}`}}"
+db_port: "{{`{{DB_PORT:3306}}`}}"
+db_name: "{{`{{DB_NAME:`}}{{.PackageName}}{{`}}`}}"
+db_user: "{{`{{DB_USER:root}}`}}"
+db_pass: "{{`{{DB_PASSWORD}}`}}"
+
+timeout_duration: 30
+
+private_jwt_access_token_secret:  "{{`{{JWT_SECRET:change-me-in-production}}`}}"
+private_jwt_refresh_token_secret: "{{`{{JWT_REFRESH_SECRET:change-me-in-production}}`}}"

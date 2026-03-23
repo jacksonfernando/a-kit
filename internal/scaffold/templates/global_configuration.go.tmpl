@@ -1,0 +1,14 @@
+package global
+
+type Configuration struct {
+	HostUrl                      string `mapstructure:"host_url"          yaml:"host_url"                          json:"host_url"`
+	HostPort                     string `mapstructure:"host_port"         yaml:"host_port"                         json:"host_port"`
+	DbHost                       string `mapstructure:"db_host"           yaml:"db_host"                           json:"db_host"`
+	DbName                       string `mapstructure:"db_name"           yaml:"db_name"                           json:"db_name"`
+	DbUser                       string `mapstructure:"db_user"           yaml:"db_user"                           json:"db_user"`
+	DbPass                       string `mapstructure:"db_pass"           yaml:"db_pass"                           json:"db_pass"`
+	DbPort                       string `mapstructure:"db_port"           yaml:"db_port"                           json:"db_port"`
+	TimeoutDuration              int    `mapstructure:"timeout_duration"  yaml:"timeout_duration"                  json:"timeout_duration"`
+	PrivateJWTAccessTokenSecret  string `mapstructure:"private_jwt_access_token_secret"  yaml:"private_jwt_access_token_secret"  json:"private_jwt_access_token_secret"`
+	PrivateJWTRefreshTokenSecret string `mapstructure:"private_jwt_refresh_token_secret" yaml:"private_jwt_refresh_token_secret" json:"private_jwt_refresh_token_secret"`
+}
