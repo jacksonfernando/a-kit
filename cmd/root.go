@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/jacksonfernando/a-kit/internal/version"
 	"github.com/spf13/cobra"
 )
 
-const banner = `
+const bannerFmt = `
   ██████╗       ██╗  ██╗██╗████████╗
   ██╔══██╗      ██║ ██╔╝██║╚══██╔══╝
   ███████║█████╗█████╔╝ ██║   ██║
@@ -15,7 +16,7 @@ const banner = `
   ██║  ██║      ██║  ██╗██║   ██║
   ╚═╝  ╚═╝      ╚═╝  ╚═╝╚═╝   ╚═╝
 
-  Go project scaffolding CLI
+  Go project scaffolding CLI   %s
 `
 
 var rootCmd = &cobra.Command{
@@ -25,7 +26,7 @@ var rootCmd = &cobra.Command{
 }
 
 func Execute() {
-	fmt.Print(banner)
+	fmt.Printf(bannerFmt, version.Get())
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -34,4 +35,5 @@ func Execute() {
 
 func init() {
 	rootCmd.AddCommand(createCmd)
+	rootCmd.AddCommand(versionCmd)
 }
