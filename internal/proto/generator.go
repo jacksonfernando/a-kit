@@ -21,6 +21,7 @@ type GeneratorData struct {
 	RPCs             []RPCInfo // RPCs that belong to this data set
 	Messages         []MsgInfo // all proto messages as Go struct info
 	NeedsEmpty       bool      // true when any RPC response is Empty (google.protobuf.Empty)
+	HasBodyRPCs      bool      // true if any RPC in this set needs a request body
 }
 
 // RPCInfo carries all derived information about one RPC.
@@ -34,6 +35,14 @@ type RPCInfo struct {
 	PathParams   []PathParam // named path parameters for handler binding
 	NeedsBody    bool        // true → method sends a body (POST/PUT/PATCH)
 	ReceiverName string      // lowercase first word, e.g. "h"
+
+	// Test data — populated during code generation
+	TestURL         string   // URL with :params replaced, e.g. "/v1/examples/test-name"
+	TestParamNames  []string // Echo param names for c.SetParamNames(...)
+	TestParamValues []string // Echo param values for c.SetParamValues(...)
+	TestQueryString string   // Query string for GET, e.g. "?page_size=10&filter=test"
+	TestBody        string   // JSON body for POST/PUT/PATCH
+	ExpectedStatus  int      // Expected HTTP status code (200 or 201)
 }
 
 // PathParam describes a single path parameter extracted from the route.
@@ -77,6 +86,12 @@ func GenerateModule(pf *ProtoFile, moduleName, modulePath, projectDir string) er
 	funcMap := template.FuncMap{
 		"lower":      strings.ToLower,
 		"lowerFirst": lowerFirst,
+		"methodTitle": func(s string) string {
+			if s == "" {
+				return s
+			}
+			return strings.ToUpper(s[:1]) + strings.ToLower(s[1:])
+		},
 	}
 
 	// Always generate models (shared by both external and internal).
@@ -98,6 +113,8 @@ func GenerateModule(pf *ProtoFile, moduleName, modulePath, projectDir string) er
 			filepath.Join(moduleName, "repository", "mysql", moduleName+"_repository.go"): tmplRepository,
 			filepath.Join(moduleName, "_mock", moduleName+"_repository_mock.go"):          tmplMockRepo,
 			filepath.Join(moduleName, "_mock", moduleName+"_service_mock.go"):             tmplMockService,
+			filepath.Join(moduleName, "handler", "http", moduleName+"_handler_test.go"):   tmplHandlerTest,
+			filepath.Join(moduleName, "service", moduleName+"_service_test.go"):           tmplServiceTest,
 		}
 		for relPath, tmplStr := range extFiles {
 			if err := writeFile(projectDir, relPath, tmplStr, external, funcMap); err != nil {
@@ -209,6 +226,19 @@ func buildGeneratorDataPair(pf *ProtoFile, svc ServiceDef, moduleName, modulePat
 			PathParams:   pathParams,
 			NeedsBody:    method == "POST" || method == "PUT" || method == "PATCH",
 		}
+
+		// populate test data
+		testURL, testParamNames, testParamValues := computeTestURL(echoPath, pathParams)
+		info.TestURL = testURL
+		info.TestParamNames = testParamNames
+		info.TestParamValues = testParamValues
+		info.ExpectedStatus = expectedHTTPStatus(method)
+		if info.NeedsBody {
+			info.TestBody = computeTestBody(r.RequestType, msgs)
+		} else {
+			info.TestQueryString = computeTestQueryString(r.RequestType, pathParams, msgs)
+		}
+
 		if r.Internal {
 			intRPCs = append(intRPCs, info)
 		} else {
@@ -234,6 +264,19 @@ func buildGeneratorDataPair(pf *ProtoFile, svc ServiceDef, moduleName, modulePat
 	internal.RPCs = intRPCs
 	internal.DirPrefix = "internal/"
 	internal.ModuleImportPath = modulePath + "/internal/" + toPackageName(moduleName)
+
+	for _, r := range external.RPCs {
+		if r.NeedsBody {
+			external.HasBodyRPCs = true
+			break
+		}
+	}
+	for _, r := range internal.RPCs {
+		if r.NeedsBody {
+			internal.HasBodyRPCs = true
+			break
+		}
+	}
 
 	return external, internal
 }
@@ -413,6 +456,139 @@ func isPrimitiveType(protoType string) bool {
 		return true
 	}
 	return false
+}
+
+// buildMsgMap creates a name→MsgInfo lookup.
+func buildMsgMap(msgs []MsgInfo) map[string]MsgInfo {
+	m := make(map[string]MsgInfo, len(msgs))
+	for _, msg := range msgs {
+		m[msg.Name] = msg
+	}
+	return m
+}
+
+// expectedHTTPStatus returns 201 for POST, 200 for everything else.
+func expectedHTTPStatus(method string) int {
+	if method == "POST" {
+		return 201
+	}
+	return 200
+}
+
+// computeTestURL replaces `:param` segments in an Echo path with "test-<param>" values.
+func computeTestURL(echoPath string, pathParams []PathParam) (testURL string, names, values []string) {
+	testURL = echoPath
+	for _, pp := range pathParams {
+		testVal := "test-" + pp.EchoParam
+		testURL = strings.ReplaceAll(testURL, ":"+pp.EchoParam, testVal)
+		names = append(names, pp.EchoParam)
+		values = append(values, testVal)
+	}
+	return testURL, names, values
+}
+
+// computeTestQueryString builds a query string from request fields that are NOT path params.
+// Only used for GET/DELETE requests (no body).
+func computeTestQueryString(requestType string, pathParams []PathParam, msgs []MsgInfo) string {
+	var msg *MsgInfo
+	for i := range msgs {
+		if msgs[i].Name == requestType {
+			msg = &msgs[i]
+			break
+		}
+	}
+	if msg == nil {
+		return ""
+	}
+
+	skip := map[string]bool{}
+	for _, pp := range pathParams {
+		skip[pp.GoField] = true
+	}
+
+	var pairs []string
+	for _, f := range msg.Fields {
+		if skip[f.GoName] {
+			continue
+		}
+		pairs = append(pairs, f.JSONTag+"="+sampleQueryValue(f.GoType))
+	}
+	if len(pairs) == 0 {
+		return ""
+	}
+	return "?" + strings.Join(pairs, "&")
+}
+
+// sampleQueryValue returns a URL-safe sample value for the given Go type.
+func sampleQueryValue(goType string) string {
+	switch goType {
+	case "int32", "int64", "uint32", "uint64":
+		return "10"
+	case "float32", "float64":
+		return "1.0"
+	case "bool":
+		return "true"
+	default:
+		return "test"
+	}
+}
+
+// computeTestBody generates a sample JSON object for the given request type.
+func computeTestBody(requestType string, msgs []MsgInfo) string {
+	msgMap := buildMsgMap(msgs)
+	msg, ok := msgMap[requestType]
+	if !ok {
+		return "{}"
+	}
+	return sampleJSONObject(msg.Fields, msgMap)
+}
+
+func sampleJSONObject(fields []FieldInfo, msgMap map[string]MsgInfo) string {
+	parts := make([]string, 0, len(fields))
+	for _, f := range fields {
+		val := sampleJSONValue(f, msgMap)
+		parts = append(parts, fmt.Sprintf(`%q: %s`, f.JSONTag, val))
+	}
+	return "{" + strings.Join(parts, ", ") + "}"
+}
+
+func sampleJSONValue(f FieldInfo, msgMap map[string]MsgInfo) string {
+	gt := f.GoType
+	switch gt {
+	case "string":
+		return `"test"`
+	case "int32", "int64", "uint32", "uint64":
+		return `1`
+	case "float32", "float64":
+		return `1.0`
+	case "bool":
+		return `true`
+	case "[]byte":
+		return `""`
+	case "[]string":
+		return `["field_name"]`
+	case "struct{}":
+		return `{}`
+	default:
+		if strings.HasPrefix(gt, "[]*") {
+			elemType := gt[3:]
+			if msg, ok := msgMap[elemType]; ok {
+				return "[" + sampleJSONObject(msg.Fields, msgMap) + "]"
+			}
+			return `[{}]`
+		}
+		if strings.HasPrefix(gt, "[]") {
+			return `["test"]`
+		}
+		if strings.HasPrefix(gt, "*") {
+			typeName := gt[1:]
+			if msg, ok := msgMap[typeName]; ok {
+				return sampleJSONObject(msg.Fields, msgMap)
+			}
+			return `{}`
+		}
+		return `"test"`
+	}
 }
 
 // protoTypeToGo maps a proto field type to a Go type string.
@@ -648,7 +824,6 @@ import (
 type Mock{{.ServiceName}} struct {
 	mock.Mock
 }
-}
 {{range .RPCs}}
 func (m *Mock{{$.ServiceName}}) {{.Name}}(ctx context.Context, req *models.{{.RequestType}}) (*models.{{.ResponseType}}, error) {
 	args := m.Called(ctx, req)
@@ -656,5 +831,85 @@ func (m *Mock{{$.ServiceName}}) {{.Name}}(ctx context.Context, req *models.{{.Re
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*models.{{.ResponseType}}), args.Error(1)
+}
+{{end}}`
+
+var tmplHandlerTest = `// Code generated by a-kit. DO NOT EDIT.
+package http
+
+import (
+	nethttp "net/http"
+	"net/http/httptest"
+	{{- if .HasBodyRPCs}}
+	"strings"
+	{{- end}}
+	"testing"
+
+	"github.com/labstack/echo/v4"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+
+	"{{.ModulePath}}/models"
+	mockpkg "{{.ModulePath}}/{{.PackageName}}/_mock"
+)
+{{range .RPCs}}
+func Test{{$.ServiceName}}Handler_{{.Name}}(t *testing.T) {
+	e := echo.New()
+	mockSvc := &mockpkg.Mock{{$.ServiceName}}{}
+	h := &{{$.ServiceName}}Handler{svc: mockSvc}
+
+	mockSvc.On("{{.Name}}", mock.Anything, mock.AnythingOfType("*models.{{.RequestType}}")).
+		Return(&models.{{.ResponseType}}{}, nil)
+
+	{{- if .NeedsBody}}
+	body := ` + "`" + `{{.TestBody}}` + "`" + `
+	req := httptest.NewRequest(nethttp.Method{{methodTitle .HTTPMethod}}, "{{.TestURL}}", strings.NewReader(body))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	{{- else}}
+	req := httptest.NewRequest(nethttp.Method{{methodTitle .HTTPMethod}}, "{{.TestURL}}{{.TestQueryString}}", nil)
+	{{- end}}
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	{{- if .TestParamNames}}
+	c.SetParamNames({{range $i, $n := .TestParamNames}}{{if $i}}, {{end}}"{{$n}}"{{end}})
+	c.SetParamValues({{range $i, $v := .TestParamValues}}{{if $i}}, {{end}}"{{$v}}"{{end}})
+	{{- end}}
+
+	err := h.{{.Name}}(c)
+	assert.NoError(t, err)
+	assert.Equal(t, {{.ExpectedStatus}}, rec.Code)
+	mockSvc.AssertExpectations(t)
+}
+{{end}}`
+
+var tmplServiceTest = `// Code generated by a-kit. DO NOT EDIT.
+package service_test
+
+import (
+	"context"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+
+	"{{.ModulePath}}/models"
+	mockpkg "{{.ModulePath}}/{{.PackageName}}/_mock"
+	svcpkg "{{.ModulePath}}/{{.PackageName}}/service"
+)
+{{range .RPCs}}
+func Test{{$.ServiceName}}_{{.Name}}(t *testing.T) {
+	mockRepo := &mockpkg.Mock{{$.ServiceName}}Repository{}
+	svc := svcpkg.New{{$.ServiceName}}(mockRepo)
+
+	req := &models.{{.RequestType}}{}
+	expected := &models.{{.ResponseType}}{}
+
+	mockRepo.On("{{.Name}}", mock.Anything, mock.AnythingOfType("*models.{{.RequestType}}")).
+		Return(expected, nil)
+
+	resp, err := svc.{{.Name}}(context.Background(), req)
+	assert.NoError(t, err)
+	assert.Equal(t, expected, resp)
+	mockRepo.AssertExpectations(t)
 }
 {{end}}`
