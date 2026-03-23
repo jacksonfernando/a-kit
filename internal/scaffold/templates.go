@@ -45,9 +45,9 @@ return map[string]string{
 "config.yaml":         mustScaffoldTmpl("config.yaml.tmpl"),
 "config.json.example": mustScaffoldTmpl("config.json.tmpl"),
 
-// mysql sqitch
-"mysql/sqitch.conf": mustScaffoldTmpl("sqitch_conf.tmpl"),
-"mysql/sqitch.plan": mustScaffoldTmpl("sqitch_plan.tmpl"),
+// migration sqitch
+"migration/sqitch.conf": mustScaffoldTmpl("sqitch_conf.tmpl"),
+"migration/sqitch.plan": mustScaffoldTmpl("sqitch_plan.tmpl"),
 
 // proto definition — the example module is generated from this
 "api/example.proto": mustScaffoldTmpl("example.proto.tmpl"),

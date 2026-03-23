@@ -1,4 +1,4 @@
-package mysql
+package db
 
 import (
 	"context"
@@ -14,8 +14,8 @@ type {{lowerFirst .ServiceName}}Repository struct {
 	db *gorm.DB
 }
 
-// New{{.ServiceName}}MySQLRepository creates a new {{.PackageName}} MySQL repository.
-func New{{.ServiceName}}MySQLRepository(db *gorm.DB) {{.PackageName}}.{{.ServiceName}}RepositoryInterface {
+// New{{.ServiceName}}Repository creates a new {{.PackageName}} repository.
+func New{{.ServiceName}}Repository(db *gorm.DB) {{.PackageName}}.{{.ServiceName}}RepositoryInterface {
 	return &{{lowerFirst .ServiceName}}Repository{db: db}
 }
 {{range .RPCs}}

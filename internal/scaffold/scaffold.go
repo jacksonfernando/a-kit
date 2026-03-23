@@ -59,10 +59,10 @@ func Generate(opts Options) error {
 
 	// Create empty directories that need to exist but have no files
 	emptyDirs := []string{
-		"mysql/deploy",
-		"mysql/init",
-		"mysql/revert",
-		"mysql/verify",
+		"migration/deploy",
+		"migration/init",
+		"migration/revert",
+		"migration/verify",
 	}
 	for _, dir := range emptyDirs {
 		fullPath := filepath.Join(projectDir, dir)

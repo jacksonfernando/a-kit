@@ -136,7 +136,7 @@ my-service/
 ├── models/                  # generated DTOs (from proto messages)
 │   └── example_dto.go
 ├── utils/                   # config loader, validator, token, common helpers
-├── mysql/                   # sqitch migration stubs
+├── migration/               # sqitch migration stubs
 │
 ├── example/                 # generated from public RPCs
 │   ├── interface.go
@@ -146,14 +146,14 @@ my-service/
 │   ├── service/
 │   │   ├── example_service.go
 │   │   └── example_service_test.go   ← generated unit tests
-│   ├── repository/mysql/
+│   ├── repository/db/
 │   └── _mock/
 │
 └── internal/
     └── example/             # generated from Internal RPCs (no HTTP layer)
         ├── interface.go
         ├── service/
-        ├── repository/mysql/
+        ├── repository/db/
         └── _mock/
 ```
 
@@ -415,7 +415,7 @@ If no annotation is provided, the method is inferred from the RPC name prefix:
 | `<module>/handler/http/<module>_handler_test.go` | Unit tests for every endpoint |
 | `<module>/service/<module>_service.go` | Service layer |
 | `<module>/service/<module>_service_test.go` | Unit tests using mock repository |
-| `<module>/repository/mysql/<module>_repository.go` | MySQL/GORM repository stub |
+| `<module>/repository/db/<module>_repository.go` | GORM repository stub |
 | `<module>/_mock/<module>_repository_mock.go` | Testify mock for repository |
 | `<module>/_mock/<module>_service_mock.go` | Testify mock for service |
 | `models/<module>_dto.go` | All request/response/resource structs |
@@ -426,7 +426,7 @@ If no annotation is provided, the method is inferred from the RPC name prefix:
 |---|---|
 | `internal/<module>/interface.go` | Repository + service interfaces |
 | `internal/<module>/service/<module>_service.go` | Service layer |
-| `internal/<module>/repository/mysql/<module>_repository.go` | MySQL/GORM repository stub |
+| `internal/<module>/repository/db/<module>_repository.go` | GORM repository stub |
 | `internal/<module>/_mock/` | Testify mocks |
 
 ---
@@ -444,12 +444,12 @@ a-kit generate order
 3. Wire routes in `main.go`:
 
 ```go
-orderRepo    := orderRepository.NewOrderServiceMySQLRepository(mysqlDb)
+orderRepo    := orderRepository.NewOrderServiceRepository(mysqlDb)
 orderSvc     := orderService.NewOrderService(orderRepo)
 orderHandler.NewOrderServiceHandler(e, orderSvc, mw)
 ```
 
-4. Implement the repository stub in `order/repository/mysql/order_repository.go`.
+4. Implement the repository stub in `order/repository/db/order_repository.go`.
 
 5. To use an internal RPC from another module:
 
